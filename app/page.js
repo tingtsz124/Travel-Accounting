@@ -31,7 +31,7 @@ export default function Home() {
     TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
   });
 
-  // 旅程日期篩選與自訂狀態
+  // 旅程日期篩選狀態
   const [filterTripDate, setFilterTripDate] = useState('ALL');
   const [isCustomTripDate, setIsCustomTripDate] = useState(false);
   const [customTripDate, setCustomTripDate] = useState('');
@@ -46,7 +46,7 @@ export default function Home() {
     currency: 'HKD',
     amount: '',
     exchangeRate: '1.0',
-    category: '未分類', // 1. 類別預設為 "未分類"
+    category: '未分類',
     date: new Date().toISOString().split('T')[0],
     paymentMethod: '現金',
     note: '',
@@ -54,13 +54,14 @@ export default function Home() {
     tripDate: ''
   });
 
-  // 2. 網頁載入時，自動讀取上一次使用的選項 (localStorage)
+  // 1. 網頁載入時，自動讀取上一次使用的選項 (包含概覽篩選)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const lastCurrency = localStorage.getItem('last_currency');
       const lastPayment = localStorage.getItem('last_paymentMethod');
       const lastTripDate = localStorage.getItem('last_tripDate');
       const lastDate = localStorage.getItem('last_date');
+      const lastFilterTripDate = localStorage.getItem('last_filterTripDate');
 
       setForm(prev => ({
         ...prev,
@@ -68,11 +69,23 @@ export default function Home() {
         paymentMethod: lastPayment || prev.paymentMethod,
         tripDate: lastTripDate || prev.tripDate,
         date: lastDate || prev.date,
-        // 如果有上次記錄的貨幣，帶入對應的匯率
         exchangeRate: lastCurrency ? (defaultRates[lastCurrency] || '1.0') : prev.exchangeRate
       }));
+
+      // 自動還原「消費概覽與計算」的上次篩選
+      if (lastFilterTripDate) {
+        setFilterTripDate(lastFilterTripDate);
+      }
     }
   }, [defaultRates]);
+
+  // 切換消費概覽篩選時，同步記錄至 localStorage
+  const handleFilterTripDateChange = (selectedDate) => {
+    setFilterTripDate(selectedDate);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('last_filterTripDate', selectedDate);
+    }
+  };
 
   // 自動抓取 Sheet 中所有不重複的「旅程日期」選項
   const uniqueTripDates = useMemo(() => {
@@ -142,7 +155,7 @@ export default function Home() {
       amountHKD: parseFloat(calculatedHKD)
     };
 
-    // 3. 儲存本次使用的選項至 localStorage，供下一次新增時預設使用
+    // 儲存本次使用的表單選項至 localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('last_currency', form.currency);
       localStorage.setItem('last_paymentMethod', form.paymentMethod);
@@ -166,7 +179,7 @@ export default function Home() {
       }
     }
 
-    // 重置表單：保留上一筆使用的貨幣、付款方式、旅程日期、消費日期；類別重置為 "未分類"
+    // 重置表單
     setForm(prev => ({
       ...prev,
       item: '',
@@ -176,7 +189,6 @@ export default function Home() {
       tripDate: finalTripDate
     }));
     
-    // 如果剛剛是手動輸入新旅程日期，送出後切換回下拉選擇模式
     if (isCustomTripDate) {
       setIsCustomTripDate(false);
       setCustomTripDate('');
@@ -379,7 +391,8 @@ export default function Home() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, color: '#137333', fontSize: '16px' }}>📊 消費概覽與計算</h3>
-            <select value={filterTripDate} onChange={e => setFilterTripDate(e.target.value)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #137333', background: '#fff', fontSize: '13px' }}>
+            {/* 2. 概覽選單切換時調用 handleFilterTripDateChange 儲存歷史紀錄 */}
+            <select value={filterTripDate} onChange={e => handleFilterTripDateChange(e.target.value)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #137333', background: '#fff', fontSize: '13px' }}>
               <option value="ALL">全部行程總計</option>
               {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
