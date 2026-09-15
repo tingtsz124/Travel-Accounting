@@ -10,7 +10,7 @@ const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '�
 
 export default function Home() {
   const [expenses, setExpenses] = useState([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [form, setForm] = useState({
@@ -26,19 +26,26 @@ export default function Home() {
     note: ''
   });
 
-  useEffect(() => {
-    const saved = localStorage.getItem('travel_expenses');
-    if (saved) {
-      try { setExpenses(JSON.parse(saved)); } catch (e) {}
+  // 從 Google Sheet 抓取最新資料
+  const fetchFromGoogleSheet = async () => {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(GOOGLE_SCRIPT_URL);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setExpenses(data.reverse()); // 讓最新輸入的顯示在最上面
+      }
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoaded(true);
-  }, []);
+  };
 
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('travel_expenses', JSON.stringify(expenses));
-    }
-  }, [expenses, isLoaded]);
+    fetchFromGoogleSheet();
+  }, []);
 
   const calculatedHKD = useMemo(() => {
     const amt = parseFloat(form.amount) || 0;
@@ -58,7 +65,6 @@ export default function Home() {
       amountHKD: parseFloat(calculatedHKD)
     };
 
-    // 1. 同步寫入 Google Sheets
     if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
       try {
         await fetch(GOOGLE_SCRIPT_URL, {
@@ -67,23 +73,21 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newExpense),
         });
+        // 寫入後重新讀取 Google Sheet 資料
+        setTimeout(() => {
+          fetchFromGoogleSheet();
+        }, 1000);
       } catch (err) {
         console.error('Failed to sync to Google Sheet:', err);
       }
     }
 
-    // 2. 更新本地端狀態
-    setExpenses([newExpense, ...expenses]);
     setForm(prev => ({ ...prev, item: '', amount: '', note: '' }));
     setIsSubmitting(false);
   };
 
-  const deleteExpense = (id) => {
-    setExpenses(expenses.filter(e => e.id !== id));
-  };
-
   const grandTotal = useMemo(() => {
-    return expenses.reduce((sum, e) => sum + e.amountHKD, 0);
+    return expenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
   }, [expenses]);
 
   return (
@@ -91,7 +95,7 @@ export default function Home() {
       <h1 style={{ textAlign: 'center', color: '#1a73e8' }}>✈️ 旅遊記帳與消費分析</h1>
 
       <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>
-        <h3 style={{ marginTop: 0 }}>新增消費 (同步至 Google Sheet)</h3>
+        <h3 style={{ marginTop: 0 }}>新增消費</h3>
         <div style={{ display: 'grid', gap: '10px' }}>
           <input placeholder="項目名稱 (如: 晚餐)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={{ padding: '8px' }} />
           
@@ -115,7 +119,7 @@ export default function Home() {
             <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} style={{ padding: '8px', flex: 1 }}>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={{ padding: '8px', flex: 1 }}>
+            <select value={value=form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={{ padding: '8px', flex: 1 }}>
               {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
@@ -131,21 +135,24 @@ export default function Home() {
 
       <div style={{ background: '#e6f4ea', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
         <h3 style={{ marginTop: 0, color: '#137333' }}>📊 總消費概覽</h3>
-        <p>目前累積總花費：<strong>HKD ${grandTotal.toFixed(2)}</strong></p>
+        <p>目前試算表總花費：<strong>HKD ${grandTotal.toFixed(2)}</strong></p>
       </div>
 
       <div>
-        <h3>消費明細 (本機歷史記錄)</h3>
-        {expenses.length === 0 ? <p style={{ color: '#888' }}>暫無紀錄</p> : (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3>消費明細 (同步自 Google Sheet)</h3>
+          <button onClick={fetchFromGoogleSheet} disabled={isLoading} style={{ padding: '6px 12px', background: '#34a853', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            {isLoading ? '同步中...' : '🔄 重新整理資料'}
+          </button>
+        </div>
+
+        {isLoading ? <p style={{ color: '#666' }}>載入 Google Sheet 資料中...</p> : expenses.length === 0 ? <p style={{ color: '#888' }}>暫無紀錄</p> : (
           <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
-            {expenses.map(e => (
-              <li key={e.id} style={{ padding: '10px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD})
-                  <br />
-                  <small style={{ color: '#666' }}>{e.category} | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''}</small>
-                </div>
-                <button onClick={() => deleteExpense(e.id)} style={{ background: '#ff4d4f', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>刪除</button>
+            {expenses.map((e, index) => (
+              <li key={index} style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
+                <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD})
+                <br />
+                <small style={{ color: '#666' }}>{e.date} | {e.category} | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''}</small>
               </li>
             ))}
           </ul>
