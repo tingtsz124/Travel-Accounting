@@ -1,6 +1,9 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 
+// ⚠️ 請將下方網址替換為你在 Google Apps Script 取得的部署網址
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec';
+
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
 const CATEGORIES = ['飲食', '交通', '機票', '酒店', 'ZB1', '門票', '娛樂', '購物', '雜項'];
 const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '工商', '中銀', '現金', 'Alipay HK', '渣打'];
@@ -8,6 +11,7 @@ const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '�
 export default function Home() {
   const [expenses, setExpenses] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     item: '',
@@ -22,20 +26,14 @@ export default function Home() {
     note: ''
   });
 
-  // 1. 首次載入網頁時，從 LocalStorage 讀取舊資料
   useEffect(() => {
     const saved = localStorage.getItem('travel_expenses');
     if (saved) {
-      try {
-        setExpenses(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse saved expenses');
-      }
+      try { setExpenses(JSON.parse(saved)); } catch (e) {}
     }
     setIsLoaded(true);
   }, []);
 
-  // 2. 當資料有更新時，自動儲存至 LocalStorage
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem('travel_expenses', JSON.stringify(expenses));
@@ -49,31 +47,40 @@ export default function Home() {
     return (amt * rate + fee).toFixed(2);
   }, [form.amount, form.exchangeRate, form.actualFeeHKD]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.item || !form.amount) return;
 
+    setIsSubmitting(true);
     const newExpense = {
       id: Date.now(),
       ...form,
       amountHKD: parseFloat(calculatedHKD)
     };
 
+    // 1. 同步寫入 Google Sheets
+    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
+      try {
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newExpense),
+        });
+      } catch (err) {
+        console.error('Failed to sync to Google Sheet:', err);
+      }
+    }
+
+    // 2. 更新本地端狀態
     setExpenses([newExpense, ...expenses]);
     setForm(prev => ({ ...prev, item: '', amount: '', note: '' }));
+    setIsSubmitting(false);
   };
 
   const deleteExpense = (id) => {
     setExpenses(expenses.filter(e => e.id !== id));
   };
-
-  const categoryTotals = useMemo(() => {
-    const totals = {};
-    expenses.forEach(e => {
-      totals[e.category] = (totals[e.category] || 0) + e.amountHKD;
-    });
-    return totals;
-  }, [expenses]);
 
   const grandTotal = useMemo(() => {
     return expenses.reduce((sum, e) => sum + e.amountHKD, 0);
@@ -83,9 +90,8 @@ export default function Home() {
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', color: '#333' }}>
       <h1 style={{ textAlign: 'center', color: '#1a73e8' }}>✈️ 旅遊記帳與消費分析</h1>
 
-      {/* 記帳表單 */}
       <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>
-        <h3 style={{ marginTop: 0 }}>新增消費</h3>
+        <h3 style={{ marginTop: 0 }}>新增消費 (同步至 Google Sheet)</h3>
         <div style={{ display: 'grid', gap: '10px' }}>
           <input placeholder="項目名稱 (如: 晚餐)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={{ padding: '8px' }} />
           
@@ -117,33 +123,19 @@ export default function Home() {
           <input placeholder="目的地 (如: 日本東京)" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} style={{ padding: '8px' }} />
           <input placeholder="備註" value={form.note} onChange={e => setForm({...form, note: e.target.value})} style={{ padding: '8px' }} />
 
-          <button type="submit" style={{ padding: '10px', background: '#1a73e8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-            記錄消費
+          <button type="submit" disabled={isSubmitting} style={{ padding: '10px', background: isSubmitting ? '#ccc' : '#1a73e8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            {isSubmitting ? '儲存中...' : '記錄並同步至 Google Sheet'}
           </button>
         </div>
       </form>
 
-      {/* 統計與 AI 分析 */}
       <div style={{ background: '#e6f4ea', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-        <h3 style={{ marginTop: 0, color: '#137333' }}>🤖 AI 消費分析卡片</h3>
-        <p>總花費金額：<strong>HKD ${grandTotal.toFixed(2)}</strong></p>
-        {expenses.length > 0 ? (
-          <div>
-            <p>目前記錄了 <strong>{expenses.length}</strong> 筆消費。消費比例最高的類別統計如下：</p>
-            <ul>
-              {Object.entries(categoryTotals).map(([cat, total]) => (
-                <li key={cat}><strong>{cat}</strong>: HKD ${total.toFixed(2)} ({((total / grandTotal) * 100).toFixed(1)}%)</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p>尚無消費資料，新增紀錄後將自動生成分析。</p>
-        )}
+        <h3 style={{ marginTop: 0, color: '#137333' }}>📊 總消費概覽</h3>
+        <p>目前累積總花費：<strong>HKD ${grandTotal.toFixed(2)}</strong></p>
       </div>
 
-      {/* 歷史列表 */}
       <div>
-        <h3>消費明細 (已自動儲存於本機)</h3>
+        <h3>消費明細 (本機歷史記錄)</h3>
         {expenses.length === 0 ? <p style={{ color: '#888' }}>暫無紀錄</p> : (
           <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
             {expenses.map(e => (
