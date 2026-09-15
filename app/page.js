@@ -321,7 +321,7 @@ export default function Home() {
 
           {/* 個人總花費（不含 wiki & 代購） */}
           <div style={{ fontSize: '16px', marginTop: '5px' }}>
-            {filterTripDate === 'ALL' ? '所有紀錄總花費 (不含wiki/代購)' : `行程 [${filterTripDate}] 個人總花費`}：
+            {filterTripDate === 'ALL' ? '所有紀錄總花費' : `行程 [${filterTripDate}] 個人總花費`}：
             <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#d93025', marginTop: '2px' }}>
               HKD ${grandTotal.toFixed(2)}
             </div>
@@ -330,7 +330,7 @@ export default function Home() {
           {/* 單獨顯示 wiki 與 代購 統計項目 */}
           <div style={{ background: '#ffffff', padding: '10px 12px', borderRadius: '8px', border: '1px solid #b7e1cd', marginTop: '5px' }}>
             <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#137333', marginBottom: '4px' }}>
-              🛍️ 獨立統計項目 (wiki / 代購)：
+              🛍️ 獨立統計項目：
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#555', flexWrap: 'wrap', gap: '5px' }}>
               <span>wiki 總計: <strong>HKD ${excludedItemsSummary.wikiTotal.toFixed(2)}</strong></span>
@@ -344,7 +344,7 @@ export default function Home() {
 
         {/* 圓形圖區塊 */}
         <hr style={{ border: 'none', borderTop: '1px solid #ceead6', margin: '15px 0' }} />
-        <h4 style={{ margin: 0, color: '#137333', textAlign: 'center', fontSize: '15px' }}>🏷️ 個人消費類別佔比 (排除 wiki/代購)</h4>
+        <h4 style={{ margin: 0, color: '#137333', textAlign: 'center', fontSize: '15px' }}>🏷️ 個人消費類別佔比</h4>
         {renderPieChart()}
       </div>
 
