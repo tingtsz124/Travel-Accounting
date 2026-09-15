@@ -12,6 +12,13 @@ const CATEGORIES = [
 ];
 const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '工商', '中銀', '現金', 'Alipay HK', '渣打'];
 
+// 圖表顏色庫
+const PIE_COLORS = [
+  '#4285F4', '#EA4335', '#FBBC05', '#34A853', '#FF6D01',
+  '#46BDC6', '#7BAAF7', '#F07B72', '#FCD271', '#57BB6A',
+  '#A142F4', '#E91E63', '#00BCD4', '#8BC34A', '#FF9800'
+];
+
 export default function Home() {
   const [expenses, setExpenses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -21,6 +28,10 @@ export default function Home() {
   const [filterTripDate, setFilterTripDate] = useState('ALL');
   const [isCustomTripDate, setIsCustomTripDate] = useState(false);
   const [customTripDate, setCustomTripDate] = useState('');
+
+  // 分頁狀態 (預設第一頁)
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   const [form, setForm] = useState({
     item: '',
@@ -62,7 +73,12 @@ export default function Home() {
     fetchFromGoogleSheet();
   }, []);
 
-  // 1. 金額 (HKD) 計算公式：金額 * 外幣匯率
+  // 當切換旅程日期時，自動重置頁碼回到第 1 頁
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterTripDate]);
+
+  // 金額 (HKD) 計算公式：金額 * 外幣匯率
   const calculatedHKD = useMemo(() => {
     const amt = parseFloat(form.amount) || 0;
     const rate = parseFloat(form.exchangeRate) || 1;
@@ -103,15 +119,90 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
-  // 根據選擇的旅程日期篩選資料與計算總花費
+  // 根據選擇的旅程日期篩選資料
   const filteredExpenses = useMemo(() => {
     if (filterTripDate === 'ALL') return expenses;
     return expenses.filter(e => e.tripDate === filterTripDate);
   }, [expenses, filterTripDate]);
 
+  // 計算總花費
   const grandTotal = useMemo(() => {
     return filteredExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
   }, [filteredExpenses]);
+
+  // 計算每個類別的總消費金額與百分比 (圓形圖用)
+  const categoryData = useMemo(() => {
+    const map = {};
+    filteredExpenses.forEach(e => {
+      const cat = e.category || '未分類';
+      map[cat] = (map[cat] || 0) + (e.amountHKD || 0);
+    });
+
+    return Object.entries(map)
+      .map(([name, value]) => ({
+        name,
+        value,
+        percent: grandTotal > 0 ? (value / grandTotal) * 100 : 0
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredExpenses, grandTotal]);
+
+  // 分頁計算邏輯
+  const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / itemsPerPage));
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredExpenses.slice(start, start + itemsPerPage);
+  }, [filteredExpenses, currentPage]);
+
+  // 原生 SVG 圓形圖繪製邏輯
+  const renderPieChart = () => {
+    if (grandTotal === 0 || categoryData.length === 0) {
+      return <p style={{ color: '#888', textAlign: 'center' }}>尚無消費數據可繪製圓形圖</p>;
+    }
+
+    let cumulativePercent = 0;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px', marginTop: '15px' }}>
+        <svg viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)', width: '180px', height: '180px', borderRadius: '50%' }}>
+          {categoryData.map((slice, i) => {
+            const startAngle = cumulativePercent * 2 * Math.PI;
+            cumulativePercent += slice.percent / 100;
+            const endAngle = cumulativePercent * 2 * Math.PI;
+
+            const x1 = Math.cos(startAngle);
+            const y1 = Math.sin(startAngle);
+            const x2 = Math.cos(endAngle);
+            const y2 = Math.sin(endAngle);
+
+            const largeArcFlag = slice.percent > 50 ? 1 : 0;
+
+            // 如果該類別佔比 100%
+            if (slice.percent === 100) {
+              return <circle key={i} cx="0" cy="0" r="1" fill={PIE_COLORS[i % PIE_COLORS.length]} />;
+            }
+
+            const pathData = `M 0 0 L ${x1} ${y1} A 1 1 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
+            return (
+              <path key={i} d={pathData} fill={PIE_COLORS[i % PIE_COLORS.length]}>
+                <title>{`${slice.name}: HKD $${slice.value.toFixed(2)} (${slice.percent.toFixed(1)}%)`}</title>
+              </path>
+            );
+          })}
+        </svg>
+
+        {/* 圖例說明 */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', maxWidth: '100%' }}>
+          {categoryData.map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px' }}>
+              <span style={{ width: '12px', height: '12px', backgroundColor: PIE_COLORS[i % PIE_COLORS.length], display: 'inline-block', borderRadius: '2px' }}></span>
+              <span>{item.name}: <strong>HKD ${item.value.toFixed(1)}</strong> ({item.percent.toFixed(1)}%)</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', color: '#333' }}>
@@ -146,7 +237,7 @@ export default function Home() {
             </select>
           </div>
 
-          {/* 旅程日期下拉選單與自訂輸入 */}
+          {/* 旅程日期下拉選單 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <select 
               value={isCustomTripDate ? 'NEW' : form.tripDate} 
@@ -189,7 +280,7 @@ export default function Home() {
         </div>
       </form>
 
-      {/* 統計與行程消費篩選 */}
+      {/* 統計與圓形圖消費分析 */}
       <div style={{ background: '#e6f4ea', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <h3 style={{ margin: 0, color: '#137333' }}>📊 消費概覽與計算</h3>
@@ -198,33 +289,66 @@ export default function Home() {
             {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
-        <p style={{ fontSize: '18px', marginTop: '10px', marginBottom: 0 }}>
+
+        <p style={{ fontSize: '18px', marginTop: '10px', marginBottom: '15px' }}>
           {filterTripDate === 'ALL' ? '所有紀錄總花費' : `行程 [${filterTripDate}] 總花費`}：
           <strong style={{ color: '#d93025' }}> HKD ${grandTotal.toFixed(2)}</strong>
         </p>
+
+        {/* 圓形圖渲染區塊 */}
+        <hr style={{ border: 'none', borderTop: '1px solid #ceead6', margin: '15px 0' }} />
+        <h4 style={{ margin: '0 0 10px 0', color: '#137333', textAlign: 'center' }}>🏷️ 消費類別佔比分析</h4>
+        {renderPieChart()}
       </div>
 
-      {/* 明細列表 */}
+      {/* 消費明細與分頁控制器 */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3>消費明細</h3>
+          <h3>消費明細 ({filteredExpenses.length} 筆)</h3>
           <button onClick={fetchFromGoogleSheet} disabled={isLoading} style={{ padding: '6px 12px', background: '#34a853', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
             {isLoading ? '同步中...' : '🔄 重新整理資料'}
           </button>
         </div>
 
-        {isLoading ? <p style={{ color: '#666' }}>載入 Google Sheet 資料中...</p> : filteredExpenses.length === 0 ? <p style={{ color: '#888' }}>暫無紀錄</p> : (
-          <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
-            {filteredExpenses.map((e, index) => (
-              <li key={index} style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
-                <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD})
-                <br />
-                <small style={{ color: '#666' }}>
-                  {e.date} | {e.category} | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''} {e.tripDate ? `| 🗓️ ${e.tripDate}` : ''}
-                </small>
-              </li>
-            ))}
-          </ul>
+        {isLoading ? (
+          <p style={{ color: '#666' }}>載入 Google Sheet 資料中...</p>
+        ) : filteredExpenses.length === 0 ? (
+          <p style={{ color: '#888' }}>該行程暫無紀錄</p>
+        ) : (
+          <>
+            <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
+              {paginatedExpenses.map((e, index) => (
+                <li key={index} style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
+                  <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD})
+                  <br />
+                  <small style={{ color: '#666' }}>
+                    {e.date} | {e.category} | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''} {e.tripDate ? `| 🗓️ ${e.tripDate}` : ''}
+                  </small>
+                </li>
+              ))}
+            </ul>
+
+            {/* 分頁按鈕控制器 */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '15px' }}>
+                <button 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                  disabled={currentPage === 1}
+                  style={{ padding: '5px 10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                >
+                  ◀ 上一頁
+                </button>
+                <span>第 {currentPage} / {totalPages} 頁</span>
+                <button 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                  disabled={currentPage === totalPages}
+                  style={{ padding: '5px 10px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                >
+                  下一頁 ▶
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
