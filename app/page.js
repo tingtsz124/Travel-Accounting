@@ -28,7 +28,7 @@ export default function Home() {
 
   // 從 Google Sheet 抓取最新資料
   const fetchFromGoogleSheet = async () => {
-    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec') return;
     setIsLoading(true);
     try {
       const res = await fetch(GOOGLE_SCRIPT_URL);
@@ -65,7 +65,7 @@ export default function Home() {
       amountHKD: parseFloat(calculatedHKD)
     };
 
-    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
+    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec') {
       try {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
