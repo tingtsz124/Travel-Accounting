@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec';
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
+
 const CATEGORIES = [
   'Share', 'wiki', '機票', '酒店', '飲食', '衣物', '手信', '退稅',
   '演唱會', '交通', '娛樂', '公仔/扭蛋', '團費', '代購', '雜項',
@@ -23,6 +24,12 @@ export default function Home() {
   const [expenses, setExpenses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 動態預設匯率（從 Google Sheet Rates 分頁抓取）
+  const [defaultRates, setDefaultRates] = useState({
+    HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
+    TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
+  });
 
   // 旅程日期篩選與自訂狀態
   const [filterTripDate, setFilterTripDate] = useState('ALL');
@@ -52,15 +59,22 @@ export default function Home() {
     return Array.from(new Set(dates));
   }, [expenses]);
 
-  // 從 Google Sheet 抓取最新資料
+  // 從 Google Sheet 抓取最新資料與匯率表
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
     try {
       const res = await fetch(GOOGLE_SCRIPT_URL);
       const data = await res.json();
+      
+      // 相容舊格式與新格式
       if (Array.isArray(data)) {
-        setExpenses(data.reverse()); // 最新輸入的顯示在最上方
+        setExpenses(data.reverse());
+      } else if (data && data.expenses) {
+        setExpenses(data.expenses.reverse());
+        if (data.defaultRates) {
+          setDefaultRates(data.defaultRates);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);
@@ -76,6 +90,16 @@ export default function Home() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filterTripDate]);
+
+  // 切換貨幣時，自動讀取最新匯率表中的預設值
+  const handleCurrencyChange = (selectedCurrency) => {
+    const defaultRate = defaultRates[selectedCurrency] || '1.0';
+    setForm(prev => ({
+      ...prev,
+      currency: selectedCurrency,
+      exchangeRate: defaultRate
+    }));
+  };
 
   // 金額 (HKD) 計算公式：金額 * 外幣匯率
   const calculatedHKD = useMemo(() => {
@@ -124,7 +148,7 @@ export default function Home() {
     return expenses.filter(e => e.tripDate === filterTripDate);
   }, [expenses, filterTripDate]);
 
-  // 1. 排除 "wiki" 與 "代購" 的消費列表（用於個人總花費與圓形圖）
+  // 排除 "wiki" 與 "代購" 的消費列表
   const personalExpenses = useMemo(() => {
     return filteredExpenses.filter(e => e.category !== 'wiki' && e.category !== '代購');
   }, [filteredExpenses]);
@@ -134,7 +158,7 @@ export default function Home() {
     return personalExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
   }, [personalExpenses]);
 
-  // 2. 單獨計算 "wiki" 與 "代購" 在目前選擇旅程中的總和
+  // 單獨計算 "wiki" 與 "代購" 總和
   const excludedItemsSummary = useMemo(() => {
     let wikiTotal = 0;
     let proxyTotal = 0;
@@ -149,7 +173,7 @@ export default function Home() {
     };
   }, [filteredExpenses]);
 
-  // 計算每個類別的總消費金額與百分比 (圓形圖用，排除 wiki & 代購)
+  // 計算每個類別的總消費金額與百分比 (圓形圖用)
   const categoryData = useMemo(() => {
     const map = {};
     personalExpenses.forEach(e => {
@@ -166,7 +190,7 @@ export default function Home() {
       .sort((a, b) => b.value - a.value);
   }, [personalExpenses, grandTotal]);
 
-  // 分頁計算邏輯（明細列表依然顯示全部項目）
+  // 分頁計算邏輯
   const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / itemsPerPage));
   const paginatedExpenses = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -209,7 +233,6 @@ export default function Home() {
           })}
         </svg>
 
-        {/* 圖例說明 */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', justifyContent: 'center', width: '100%' }}>
           {categoryData.map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
@@ -243,7 +266,7 @@ export default function Home() {
           <input placeholder="項目名稱 (如: 晚餐)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={inputStyle} />
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
-            <select value={form.currency} onChange={e => setForm({...form, currency: e.target.value})} style={inputStyle}>
+            <select value={form.currency} onChange={e => handleCurrencyChange(e.target.value)} style={inputStyle}>
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <input type="number" step="0.01" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
@@ -319,22 +342,20 @@ export default function Home() {
             </select>
           </div>
 
-          {/* 個人總花費（不含 wiki & 代購） */}
           <div style={{ fontSize: '16px', marginTop: '5px' }}>
-            {filterTripDate === 'ALL' ? '所有紀錄總花費' : `行程 [${filterTripDate}] 個人總花費`}：
+            {filterTripDate === 'ALL' ? '所有紀錄總花費 (不含wiki/代購)' : `行程 [${filterTripDate}] 個人總花費`}：
             <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#d93025', marginTop: '2px' }}>
               HKD ${grandTotal.toFixed(2)}
             </div>
           </div>
 
-          {/* 單獨顯示 wiki 與 代購 統計項目 */}
           <div style={{ background: '#ffffff', padding: '10px 12px', borderRadius: '8px', border: '1px solid #b7e1cd', marginTop: '5px' }}>
             <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#137333', marginBottom: '4px' }}>
-              🛍️ 獨立統計項目：
+              🛍️ 獨立統計項目 (wiki / 代購)：
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#555', flexWrap: 'wrap', gap: '5px' }}>
               <span>wiki 總計: <strong>HKD ${excludedItemsSummary.wikiTotal.toFixed(2)}</strong></span>
-              <span>代購 總計: <strong>HKD ${excludedItemsSummary.proxyTotal.toFixed(2)}</strong></span>
+              <span>代購 總计: <strong>HKD ${excludedItemsSummary.proxyTotal.toFixed(2)}</strong></span>
             </div>
             <div style={{ fontSize: '13px', color: '#137333', borderTop: '1px dashed #e0e0e0', paddingTop: '4px', marginTop: '4px', fontWeight: 'bold' }}>
               小計總和: HKD ${excludedItemsSummary.combinedTotal.toFixed(2)}
@@ -342,9 +363,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 圓形圖區塊 */}
         <hr style={{ border: 'none', borderTop: '1px solid #ceead6', margin: '15px 0' }} />
-        <h4 style={{ margin: 0, color: '#137333', textAlign: 'center', fontSize: '15px' }}>🏷️ 個人消費類別佔比</h4>
+        <h4 style={{ margin: 0, color: '#137333', textAlign: 'center', fontSize: '15px' }}>🏷️ 個人消費類別佔比 (排除 wiki/代購)</h4>
         {renderPieChart()}
       </div>
 
@@ -379,7 +399,6 @@ export default function Home() {
               ))}
             </ul>
 
-            {/* 分頁按鈕 */}
             {totalPages > 1 && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginTop: '20px' }}>
                 <button 
