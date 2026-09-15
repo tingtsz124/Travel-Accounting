@@ -28,7 +28,7 @@ export default function Home() {
 
   // 從 Google Sheet 抓取最新資料
   const fetchFromGoogleSheet = async () => {
-    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec') return;
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
     try {
       const res = await fetch(GOOGLE_SCRIPT_URL);
@@ -65,7 +65,7 @@ export default function Home() {
       amountHKD: parseFloat(calculatedHKD)
     };
 
-    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec') {
+    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
       try {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
@@ -119,7 +119,7 @@ export default function Home() {
             <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} style={{ padding: '8px', flex: 1 }}>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={value=form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={{ padding: '8px', flex: 1 }}>
+            <select value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={{ padding: '8px', flex: 1 }}>
               {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
