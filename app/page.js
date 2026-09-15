@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
 const CATEGORIES = ['飲食', '交通', '機票', '酒店', 'ZB1', '門票', '娛樂', '購物', '雜項'];
@@ -7,6 +7,8 @@ const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '�
 
 export default function Home() {
   const [expenses, setExpenses] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
   const [form, setForm] = useState({
     item: '',
     currency: 'HKD',
@@ -19,6 +21,26 @@ export default function Home() {
     destination: '',
     note: ''
   });
+
+  // 1. 首次載入網頁時，從 LocalStorage 讀取舊資料
+  useEffect(() => {
+    const saved = localStorage.getItem('travel_expenses');
+    if (saved) {
+      try {
+        setExpenses(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse saved expenses');
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // 2. 當資料有更新時，自動儲存至 LocalStorage
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('travel_expenses', JSON.stringify(expenses));
+    }
+  }, [expenses, isLoaded]);
 
   const calculatedHKD = useMemo(() => {
     const amt = parseFloat(form.amount) || 0;
@@ -39,6 +61,10 @@ export default function Home() {
 
     setExpenses([newExpense, ...expenses]);
     setForm(prev => ({ ...prev, item: '', amount: '', note: '' }));
+  };
+
+  const deleteExpense = (id) => {
+    setExpenses(expenses.filter(e => e.id !== id));
   };
 
   const categoryTotals = useMemo(() => {
@@ -117,12 +143,17 @@ export default function Home() {
 
       {/* 歷史列表 */}
       <div>
-        <h3>消費明細</h3>
+        <h3>消費明細 (已自動儲存於本機)</h3>
         {expenses.length === 0 ? <p style={{ color: '#888' }}>暫無紀錄</p> : (
-          <ul style={{ paddingLeft: '20px' }}>
+          <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
             {expenses.map(e => (
-              <li key={e.id} style={{ marginBottom: '8px' }}>
-                <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD}) | {e.category} | {e.paymentMethod}
+              <li key={e.id} style={{ padding: '10px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD})
+                  <br />
+                  <small style={{ color: '#666' }}>{e.category} | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''}</small>
+                </div>
+                <button onClick={() => deleteExpense(e.id)} style={{ background: '#ff4d4f', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>刪除</button>
               </li>
             ))}
           </ul>
