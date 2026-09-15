@@ -29,7 +29,7 @@ export default function Home() {
   const [isCustomTripDate, setIsCustomTripDate] = useState(false);
   const [customTripDate, setCustomTripDate] = useState('');
 
-  // 分頁狀態 (預設第一頁)
+  // 分頁狀態
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
@@ -73,7 +73,6 @@ export default function Home() {
     fetchFromGoogleSheet();
   }, []);
 
-  // 當切換旅程日期時，自動重置頁碼回到第 1 頁
   useEffect(() => {
     setCurrentPage(1);
   }, [filterTripDate]);
@@ -125,15 +124,35 @@ export default function Home() {
     return expenses.filter(e => e.tripDate === filterTripDate);
   }, [expenses, filterTripDate]);
 
-  // 計算總花費
-  const grandTotal = useMemo(() => {
-    return filteredExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
+  // 1. 排除 "wiki" 與 "代購" 的消費列表（用於個人總花費與圓形圖）
+  const personalExpenses = useMemo(() => {
+    return filteredExpenses.filter(e => e.category !== 'wiki' && e.category !== '代購');
   }, [filteredExpenses]);
 
-  // 計算每個類別的總消費金額與百分比 (圓形圖用)
+  // 個人總花費（不含 wiki & 代購）
+  const grandTotal = useMemo(() => {
+    return personalExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
+  }, [personalExpenses]);
+
+  // 2. 單獨計算 "wiki" 與 "代購" 在目前選擇旅程中的總和
+  const excludedItemsSummary = useMemo(() => {
+    let wikiTotal = 0;
+    let proxyTotal = 0;
+    filteredExpenses.forEach(e => {
+      if (e.category === 'wiki') wikiTotal += (e.amountHKD || 0);
+      if (e.category === '代購') proxyTotal += (e.amountHKD || 0);
+    });
+    return {
+      wikiTotal,
+      proxyTotal,
+      combinedTotal: wikiTotal + proxyTotal
+    };
+  }, [filteredExpenses]);
+
+  // 計算每個類別的總消費金額與百分比 (圓形圖用，排除 wiki & 代購)
   const categoryData = useMemo(() => {
     const map = {};
-    filteredExpenses.forEach(e => {
+    personalExpenses.forEach(e => {
       const cat = e.category || '未分類';
       map[cat] = (map[cat] || 0) + (e.amountHKD || 0);
     });
@@ -145,9 +164,9 @@ export default function Home() {
         percent: grandTotal > 0 ? (value / grandTotal) * 100 : 0
       }))
       .sort((a, b) => b.value - a.value);
-  }, [filteredExpenses, grandTotal]);
+  }, [personalExpenses, grandTotal]);
 
-  // 分頁計算邏輯
+  // 分頁計算邏輯（明細列表依然顯示全部項目）
   const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / itemsPerPage));
   const paginatedExpenses = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -157,14 +176,14 @@ export default function Home() {
   // 原生 SVG 圓形圖繪製邏輯
   const renderPieChart = () => {
     if (grandTotal === 0 || categoryData.length === 0) {
-      return <p style={{ color: '#888', textAlign: 'center' }}>尚無消費數據可繪製圓形圖</p>;
+      return <p style={{ color: '#888', textAlign: 'center', margin: '15px 0' }}>尚無個人消費數據可繪製圓形圖</p>;
     }
 
     let cumulativePercent = 0;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px', marginTop: '15px' }}>
-        <svg viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)', width: '180px', height: '180px', borderRadius: '50%' }}>
+        <svg viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)', width: '160px', height: '160px', borderRadius: '50%' }}>
           {categoryData.map((slice, i) => {
             const startAngle = cumulativePercent * 2 * Math.PI;
             cumulativePercent += slice.percent / 100;
@@ -177,7 +196,6 @@ export default function Home() {
 
             const largeArcFlag = slice.percent > 50 ? 1 : 0;
 
-            // 如果該類別佔比 100%
             if (slice.percent === 100) {
               return <circle key={i} cx="0" cy="0" r="1" fill={PIE_COLORS[i % PIE_COLORS.length]} />;
             }
@@ -192,10 +210,10 @@ export default function Home() {
         </svg>
 
         {/* 圖例說明 */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', maxWidth: '100%' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', justifyContent: 'center', width: '100%' }}>
           {categoryData.map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px' }}>
-              <span style={{ width: '12px', height: '12px', backgroundColor: PIE_COLORS[i % PIE_COLORS.length], display: 'inline-block', borderRadius: '2px' }}></span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
+              <span style={{ width: '10px', height: '10px', backgroundColor: PIE_COLORS[i % PIE_COLORS.length], display: 'inline-block', borderRadius: '2px' }}></span>
               <span>{item.name}: <strong>HKD ${item.value.toFixed(1)}</strong> ({item.percent.toFixed(1)}%)</span>
             </div>
           ))}
@@ -204,41 +222,51 @@ export default function Home() {
     );
   };
 
+  const inputStyle = {
+    padding: '10px',
+    borderRadius: '6px',
+    border: '1px solid #ccc',
+    width: '100%',
+    boxSizing: 'border-box',
+    fontSize: '14px'
+  };
+
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif', color: '#333' }}>
-      <h1 style={{ textAlign: 'center', color: '#1a73e8' }}>✈️ 旅遊記帳與消費分析</h1>
+    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#333', boxSizing: 'border-box' }}>
+      <h1 style={{ textAlign: 'center', color: '#1a73e8', fontSize: '22px', margin: '15px 0' }}>✈️ 旅遊記帳與消費分析</h1>
 
       {/* 新增消費表單 */}
-      <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>
-        <h3 style={{ marginTop: 0 }}>新增消費</h3>
-        <div style={{ display: 'grid', gap: '10px' }}>
-          <input placeholder="項目名稱 (如: 晚餐)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={{ padding: '8px' }} />
+      <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #e0e0e0', boxSizing: 'border-box' }}>
+        <h3 style={{ marginTop: 0, fontSize: '16px', color: '#444' }}>新增消費</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <select value={form.currency} onChange={e => setForm({...form, currency: e.target.value})} style={{ padding: '8px' }}>
+          <input placeholder="項目名稱 (如: 晚餐)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={inputStyle} />
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+            <select value={form.currency} onChange={e => setForm({...form, currency: e.target.value})} style={inputStyle}>
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <input type="number" step="0.01" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={{ padding: '8px', flex: 1 }} />
+            <input type="number" step="0.01" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <input type="number" step="0.0001" placeholder="外幣匯率" value={form.exchangeRate} onChange={e => setForm({...form, exchangeRate: e.target.value})} style={{ padding: '8px', flex: 1 }} />
-            <div style={{ background: '#e8f0fe', padding: '8px 12px', borderRadius: '4px', fontWeight: 'bold', minWidth: '130px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
+            <input type="number" step="0.0001" placeholder="外幣匯率" value={form.exchangeRate} onChange={e => setForm({...form, exchangeRate: e.target.value})} style={inputStyle} />
+            <div style={{ background: '#e8f0fe', padding: '10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', color: '#1967d2', textAlign: 'center', whiteSpace: 'nowrap' }}>
               折合 HKD: ${calculatedHKD}
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} style={{ padding: '8px', flex: 1 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} style={inputStyle}>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={{ padding: '8px', flex: 1 }}>
+            <select value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={inputStyle}>
               {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
 
           {/* 旅程日期下拉選單 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <select 
               value={isCustomTripDate ? 'NEW' : form.tripDate} 
               onChange={e => {
@@ -249,7 +277,7 @@ export default function Home() {
                   setForm({...form, tripDate: e.target.value});
                 }
               }} 
-              style={{ padding: '8px' }}
+              style={inputStyle}
             >
               <option value="">選擇旅程日期...</option>
               {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
@@ -262,87 +290,110 @@ export default function Home() {
                 value={customTripDate} 
                 onChange={e => setCustomTripDate(e.target.value)} 
                 required
-                style={{ padding: '8px', borderColor: '#1a73e8' }} 
+                style={{ ...inputStyle, borderColor: '#1a73e8' }} 
               />
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={{ padding: '8px' }} />
-            <input placeholder="目的地 (如: 日本東京)" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} style={{ padding: '8px', flex: 1 }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={inputStyle} />
+            <input placeholder="目的地 (如: 東京)" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} style={inputStyle} />
           </div>
 
-          <input placeholder="備註" value={form.note} onChange={e => setForm({...form, note: e.target.value})} style={{ padding: '8px' }} />
+          <input placeholder="備註" value={form.note} onChange={e => setForm({...form, note: e.target.value})} style={inputStyle} />
 
-          <button type="submit" disabled={isSubmitting} style={{ padding: '10px', background: isSubmitting ? '#ccc' : '#1a73e8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+          <button type="submit" disabled={isSubmitting} style={{ padding: '12px', background: isSubmitting ? '#ccc' : '#1a73e8', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px', marginTop: '5px' }}>
             {isSubmitting ? '儲存中...' : '記錄並同步至 Google Sheet'}
           </button>
         </div>
       </form>
 
       {/* 統計與圓形圖消費分析 */}
-      <div style={{ background: '#e6f4ea', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-          <h3 style={{ margin: 0, color: '#137333' }}>📊 消費概覽與計算</h3>
-          <select value={filterTripDate} onChange={e => setFilterTripDate(e.target.value)} style={{ padding: '6px' }}>
-            <option value="ALL">全部行程總計</option>
-            {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
+      <div style={{ background: '#e6f4ea', padding: '15px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #ceead6', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, color: '#137333', fontSize: '16px' }}>📊 消費概覽與計算</h3>
+            <select value={filterTripDate} onChange={e => setFilterTripDate(e.target.value)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #137333', background: '#fff', fontSize: '13px' }}>
+              <option value="ALL">全部行程總計</option>
+              {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+
+          {/* 個人總花費（不含 wiki & 代購） */}
+          <div style={{ fontSize: '16px', marginTop: '5px' }}>
+            {filterTripDate === 'ALL' ? '所有紀錄總花費 (不含wiki/代購)' : `行程 [${filterTripDate}] 個人總花費`}：
+            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#d93025', marginTop: '2px' }}>
+              HKD ${grandTotal.toFixed(2)}
+            </div>
+          </div>
+
+          {/* 單獨顯示 wiki 與 代購 統計項目 */}
+          <div style={{ background: '#ffffff', padding: '10px 12px', borderRadius: '8px', border: '1px solid #b7e1cd', marginTop: '5px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#137333', marginBottom: '4px' }}>
+              🛍️ 獨立統計項目 (wiki / 代購)：
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#555', flexWrap: 'wrap', gap: '5px' }}>
+              <span>wiki 總計: <strong>HKD ${excludedItemsSummary.wikiTotal.toFixed(2)}</strong></span>
+              <span>代購 總計: <strong>HKD ${excludedItemsSummary.proxyTotal.toFixed(2)}</strong></span>
+            </div>
+            <div style={{ fontSize: '13px', color: '#137333', borderTop: '1px dashed #e0e0e0', paddingTop: '4px', marginTop: '4px', fontWeight: 'bold' }}>
+              小計總和: HKD ${excludedItemsSummary.combinedTotal.toFixed(2)}
+            </div>
+          </div>
         </div>
 
-        <p style={{ fontSize: '18px', marginTop: '10px', marginBottom: '15px' }}>
-          {filterTripDate === 'ALL' ? '所有紀錄總花費' : `行程 [${filterTripDate}] 總花費`}：
-          <strong style={{ color: '#d93025' }}> HKD ${grandTotal.toFixed(2)}</strong>
-        </p>
-
-        {/* 圓形圖渲染區塊 */}
+        {/* 圓形圖區塊 */}
         <hr style={{ border: 'none', borderTop: '1px solid #ceead6', margin: '15px 0' }} />
-        <h4 style={{ margin: '0 0 10px 0', color: '#137333', textAlign: 'center' }}>🏷️ 消費類別佔比分析</h4>
+        <h4 style={{ margin: 0, color: '#137333', textAlign: 'center', fontSize: '15px' }}>🏷️ 個人消費類別佔比 (排除 wiki/代購)</h4>
         {renderPieChart()}
       </div>
 
       {/* 消費明細與分頁控制器 */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3>消費明細 ({filteredExpenses.length} 筆)</h3>
-          <button onClick={fetchFromGoogleSheet} disabled={isLoading} style={{ padding: '6px 12px', background: '#34a853', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-            {isLoading ? '同步中...' : '🔄 重新整理資料'}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h3 style={{ margin: 0, fontSize: '16px' }}>消費明細 ({filteredExpenses.length} 筆)</h3>
+          <button onClick={fetchFromGoogleSheet} disabled={isLoading} style={{ padding: '6px 12px', background: '#34a853', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}>
+            {isLoading ? '同步中...' : '🔄 重新整理'}
           </button>
         </div>
 
         {isLoading ? (
-          <p style={{ color: '#666' }}>載入 Google Sheet 資料中...</p>
+          <p style={{ color: '#666', textAlign: 'center' }}>載入 Google Sheet 資料中...</p>
         ) : filteredExpenses.length === 0 ? (
-          <p style={{ color: '#888' }}>該行程暫無紀錄</p>
+          <p style={{ color: '#888', textAlign: 'center' }}>該行程暫無紀錄</p>
         ) : (
           <>
-            <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
+            <ul style={{ paddingLeft: '0', listStyle: 'none', margin: 0 }}>
               {paginatedExpenses.map((e, index) => (
-                <li key={index} style={{ padding: '10px', borderBottom: '1px solid #eee' }}>
-                  <strong>{e.item}</strong> - {e.currency} ${e.amount} (折合 HKD ${e.amountHKD})
-                  <br />
-                  <small style={{ color: '#666' }}>
-                    {e.date} | {e.category} | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''} {e.tripDate ? `| 🗓️ ${e.tripDate}` : ''}
-                  </small>
+                <li key={index} style={{ padding: '12px 8px', borderBottom: '1px solid #eee' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <strong style={{ fontSize: '15px' }}>{e.item}</strong>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: e.category === 'wiki' || e.category === '代購' ? '#e65100' : '#1a73e8' }}>
+                      HKD ${e.amountHKD.toFixed(2)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                    {e.currency} ${e.amount} | {e.date} | <span style={{ background: '#f0f0f0', padding: '2px 6px', borderRadius: '4px' }}>{e.category}</span> | {e.paymentMethod} {e.destination ? `| ${e.destination}` : ''}
+                  </div>
                 </li>
               ))}
             </ul>
 
-            {/* 分頁按鈕控制器 */}
+            {/* 分頁按鈕 */}
             {totalPages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginTop: '20px' }}>
                 <button 
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
                   disabled={currentPage === 1}
-                  style={{ padding: '5px 10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #ccc', background: currentPage === 1 ? '#eee' : '#fff', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
                 >
                   ◀ 上一頁
                 </button>
-                <span>第 {currentPage} / {totalPages} 頁</span>
+                <span style={{ fontSize: '14px' }}>第 {currentPage} / {totalPages} 頁</span>
                 <button 
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
                   disabled={currentPage === totalPages}
-                  style={{ padding: '5px 10px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #ccc', background: currentPage === totalPages ? '#eee' : '#fff', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
                 >
                   下一頁 ▶
                 </button>
