@@ -35,10 +35,10 @@ const CATEGORIES_WITH_ICONS = [
 
 const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '工商', '中銀', '現金', 'Alipay HK', '渣打'];
 
-// 質感馬卡龍配色庫 (圖表用)
-const PIE_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#14b8a6'
+// 木質大地色系配色庫 (圓餅圖用)
+const WOOD_COLORS = [
+  '#8c6d58', '#a67c52', '#c4a482', '#d2b48c', '#a0522d',
+  '#b8860b', '#cd853f', '#d2a679', '#966f33', '#b38b6d'
 ];
 
 export default function Home() {
@@ -257,14 +257,14 @@ export default function Home() {
 
   const renderPieChart = () => {
     if (grandTotal === 0 || categoryData.length === 0) {
-      return <p style={{ color: '#94a3b8', textAlign: 'center', margin: '20px 0', fontSize: '13px' }}>尚無消費數據</p>;
+      return <p style={{ color: '#a39281', textAlign: 'center', margin: '20px 0', fontSize: '13px' }}>尚無消費數據</p>;
     }
 
     let cumulativePercent = 0;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', marginTop: '16px' }}>
-        <svg viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)', width: '150px', height: '150px', borderRadius: '50%' }}>
+        <svg viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)', width: '140px', height: '140px', borderRadius: '50%' }}>
           {categoryData.map((slice, i) => {
             const startAngle = cumulativePercent * 2 * Math.PI;
             cumulativePercent += slice.percent / 100;
@@ -278,12 +278,12 @@ export default function Home() {
             const largeArcFlag = slice.percent > 50 ? 1 : 0;
 
             if (slice.percent === 100) {
-              return <circle key={i} cx="0" cy="0" r="1" fill={PIE_COLORS[i % PIE_COLORS.length]} />;
+              return <circle key={i} cx="0" cy="0" r="1" fill={WOOD_COLORS[i % WOOD_COLORS.length]} />;
             }
 
             const pathData = `M 0 0 L ${x1} ${y1} A 1 1 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
             return (
-              <path key={i} d={pathData} fill={PIE_COLORS[i % PIE_COLORS.length]}>
+              <path key={i} d={pathData} fill={WOOD_COLORS[i % WOOD_COLORS.length]}>
                 <title>{`${slice.name}: HKD $${slice.value.toFixed(2)} (${slice.percent.toFixed(1)}%)`}</title>
               </path>
             );
@@ -292,10 +292,10 @@ export default function Home() {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', width: '100%' }}>
           {categoryData.map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '20px' }}>
-              <span style={{ width: '8px', height: '8px', backgroundColor: PIE_COLORS[i % PIE_COLORS.length], borderRadius: '50%' }}></span>
-              <span style={{ color: '#334155', fontWeight: '500' }}>{item.name}</span>
-              <span style={{ color: '#64748b' }}>${item.value.toFixed(0)} ({item.percent.toFixed(0)}%)</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', background: '#efe9e0', padding: '4px 10px', borderRadius: '20px' }}>
+              <span style={{ width: '8px', height: '8px', backgroundColor: WOOD_COLORS[i % WOOD_COLORS.length], borderRadius: '50%' }}></span>
+              <span style={{ color: '#4a3525', fontWeight: '500' }}>{item.name}</span>
+              <span style={{ color: '#7c6a58' }}>${item.value.toFixed(0)} ({item.percent.toFixed(0)}%)</span>
             </div>
           ))}
         </div>
@@ -303,101 +303,42 @@ export default function Home() {
     );
   };
 
-  // 通用質感輸入框樣式
+  // 木質質感統一輸入框
   const inputStyle = {
     padding: '12px 14px',
     borderRadius: '10px',
-    border: '1px solid #e2e8f0',
+    border: '1px solid #e2d7c7',
     backgroundColor: '#ffffff',
     width: '100%',
     boxSizing: 'border-box',
     fontSize: '14px',
-    color: '#0f172a',
-    outline: 'none',
-    transition: 'all 0.2s ease-in-out'
+    color: '#3d2b1f',
+    outline: 'none'
   };
 
-  // 取得類別對應 Icon
   const getCategoryIcon = (catName) => {
     const found = CATEGORIES_WITH_ICONS.find(c => c.name === catName);
     return found ? found.icon : '🏷️';
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '16px 12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f6f3ed', padding: '16px 12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       <div style={{ maxWidth: '520px', margin: '0 auto' }}>
         
         {/* 頁面標題 */}
         <div style={{ textAlign: 'center', margin: '10px 0 20px 0' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#0f172a', letterSpacing: '-0.02em', margin: 0 }}>
-            ✈️ 旅行與消費記帳
+          <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#4a3525', letterSpacing: '-0.02em', margin: 0 }}>
+            ☕ 旅行與消費記帳
           </h1>
-          <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>輕鬆記錄每筆花費與旅程開支</p>
+          <p style={{ fontSize: '12px', color: '#8c7663', marginTop: '4px' }}>溫暖木質風格 • 輕鬆紀錄每筆花費</p>
         </div>
 
-        {/* 高級深色質感卡片 (消費概覽) */}
-        <div style={{ 
-          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', 
-          color: '#ffffff', 
-          padding: '20px', 
-          borderRadius: '20px', 
-          marginBottom: '20px',
-          boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.25)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>📊 消費總覽與分析</span>
-            <select 
-              value={filterTripDate} 
-              onChange={e => handleFilterTripDateChange(e.target.value)} 
-              style={{ 
-                padding: '6px 10px', 
-                borderRadius: '8px', 
-                border: '1px solid #334155', 
-                background: '#0f172a', 
-                color: '#f8fafc', 
-                fontSize: '12px',
-                outline: 'none'
-              }}
-            >
-              <option value="ALL">全部行程總計</option>
-              {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
-              {filterTripDate === 'ALL' ? '個人開支總計 (排除 wiki/代購)' : `行程 [${filterTripDate}] 個人花費`}
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: '800', color: '#38bdf8', marginTop: '2px', letterSpacing: '-0.03em' }}>
-              HKD ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-
-          {/* 獨立統計項目 */}
-          <div style={{ background: 'rgba(255, 255, 255, 0.06)', backdropFilter: 'blur(10px)', padding: '12px 14px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-            <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '600', marginBottom: '6px' }}>
-              🛍️ 獨立小計 (wiki / 代購)
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#e2e8f0' }}>
-              <span>wiki: <strong>${excludedItemsSummary.wikiTotal.toFixed(1)}</strong></span>
-              <span>代購: <strong>${excludedItemsSummary.proxyTotal.toFixed(1)}</strong></span>
-              <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>合計: ${excludedItemsSummary.combinedTotal.toFixed(1)}</span>
-            </div>
-          </div>
-
-          {/* 圓形圖 */}
-          <div style={{ borderTop: '1px solid #334155', marginTop: '16px', paddingTop: '12px' }}>
-            <div style={{ fontSize: '12px', textAlign: 'center', color: '#94a3b8' }}>🏷️ 個人類別消費佔比</div>
-            {renderPieChart()}
-          </div>
-        </div>
-
-        {/* 新增消費表單 (極簡卡片) */}
-        <form onSubmit={handleSubmit} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
-          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '600', color: '#0f172a' }}>➕ 新增消費紀錄</h3>
+        {/* 1️⃣ 第一順位：新增消費表單 (溫暖奶油白卡片) */}
+        <form onSubmit={handleSubmit} style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>✍️ 新增消費紀錄</h3>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <input placeholder="項目名稱 (例如: 晚餐 / 拍立得)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={inputStyle} />
+            <input placeholder="項目名稱 (例如: 咖啡 / 門票)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={inputStyle} />
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
               <select value={form.currency} onChange={e => handleCurrencyChange(e.target.value)} style={inputStyle}>
@@ -408,7 +349,7 @@ export default function Home() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
               <input type="number" step="0.0001" placeholder="匯率" value={form.exchangeRate} onChange={e => setForm({...form, exchangeRate: e.target.value})} style={inputStyle} />
-              <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '10px', borderRadius: '10px', fontWeight: '600', fontSize: '13px', color: '#0284c7', textAlign: 'center' }}>
+              <div style={{ backgroundColor: '#f5efe6', border: '1px solid #e0d5c1', padding: '10px', borderRadius: '10px', fontWeight: '600', fontSize: '13px', color: '#735238', textAlign: 'center' }}>
                 折合 HKD ${calculatedHKD}
               </div>
             </div>
@@ -449,14 +390,14 @@ export default function Home() {
                   value={customTripDate} 
                   onChange={e => setCustomTripDate(e.target.value)} 
                   required
-                  style={{ ...inputStyle, borderColor: '#0284c7' }} 
+                  style={{ ...inputStyle, borderColor: '#8c6d58' }} 
                 />
               )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={inputStyle} />
-              <input placeholder="目的地 (例如: 東京)" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} style={inputStyle} />
+              <input placeholder="目的地 (例如: 京都)" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} style={inputStyle} />
             </div>
 
             <input placeholder="備註 (選填)" value={form.note} onChange={e => setForm({...form, note: e.target.value})} style={inputStyle} />
@@ -466,7 +407,7 @@ export default function Home() {
               disabled={isSubmitting} 
               style={{ 
                 padding: '14px', 
-                background: isSubmitting ? '#94a3b8' : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', 
+                background: isSubmitting ? '#a39281' : '#5c4033', 
                 color: '#ffffff', 
                 border: 'none', 
                 borderRadius: '12px', 
@@ -474,7 +415,7 @@ export default function Home() {
                 fontWeight: '600', 
                 fontSize: '15px', 
                 marginTop: '4px',
-                boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)',
+                boxShadow: '0 4px 12px rgba(92, 64, 51, 0.2)',
                 transition: 'all 0.2s'
               }}
             >
@@ -483,47 +424,105 @@ export default function Home() {
           </div>
         </form>
 
-        {/* 明細列表 (卡片風格) */}
-        <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
+        {/* 2️⃣ 第二順位：消費概覽與統計 (淺色木質奶茶色卡片) */}
+        <div style={{ 
+          backgroundColor: '#f5efe6', 
+          border: '1px solid #e6dcce',
+          color: '#4a3525', 
+          padding: '20px', 
+          borderRadius: '20px', 
+          marginBottom: '20px',
+          boxShadow: '0 4px 15px rgba(92, 64, 51, 0.04)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ fontSize: '13px', color: '#7c6a58', fontWeight: '600' }}>📊 消費總覽與分析</span>
+            <select 
+              value={filterTripDate} 
+              onChange={e => handleFilterTripDateChange(e.target.value)} 
+              style={{ 
+                padding: '6px 10px', 
+                borderRadius: '8px', 
+                border: '1px solid #d4c5b3', 
+                background: '#ffffff', 
+                color: '#4a3525', 
+                fontSize: '12px',
+                outline: 'none'
+              }}
+            >
+              <option value="ALL">全部行程總計</option>
+              {uniqueTripDates.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '12px', color: '#8c7663' }}>
+              {filterTripDate === 'ALL' ? '個人開支總計 (排除 wiki/代購)' : `行程 [${filterTripDate}] 個人花費`}
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '800', color: '#5c4033', marginTop: '2px', letterSpacing: '-0.03em' }}>
+              HKD ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          {/* 獨立統計項目 */}
+          <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e8dec8' }}>
+            <div style={{ fontSize: '12px', color: '#8c7663', fontWeight: '600', marginBottom: '6px' }}>
+              🛍️ 獨立小計 (wiki / 代購)
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#4a3525' }}>
+              <span>wiki: <strong>${excludedItemsSummary.wikiTotal.toFixed(1)}</strong></span>
+              <span>代購: <strong>${excludedItemsSummary.proxyTotal.toFixed(1)}</strong></span>
+              <span style={{ color: '#a0522d', fontWeight: 'bold' }}>合計: ${excludedItemsSummary.combinedTotal.toFixed(1)}</span>
+            </div>
+          </div>
+
+          {/* 圓形圖 */}
+          <div style={{ borderTop: '1px solid #e0d5c1', marginTop: '16px', paddingTop: '12px' }}>
+            <div style={{ fontSize: '12px', textAlign: 'center', color: '#8c7663' }}>🏷️ 個人類別消費佔比</div>
+            {renderPieChart()}
+          </div>
+        </div>
+
+        {/* 3️⃣ 第三順位：明細列表 (米白卡片) */}
+        <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#0f172a' }}>📋 消費明細 ({filteredExpenses.length})</h3>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({filteredExpenses.length})</h3>
             <button 
               onClick={fetchFromGoogleSheet} 
               disabled={isLoading} 
-              style={{ padding: '6px 12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
+              style={{ padding: '6px 12px', background: '#efe9e0', color: '#5c4033', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
             >
               {isLoading ? '同步中...' : '🔄 重新整理'}
             </button>
           </div>
 
           {isLoading ? (
-            <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>資料同步中...</p>
+            <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>資料同步中...</p>
           ) : filteredExpenses.length === 0 ? (
-            <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>該行程無消費紀錄</p>
+            <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>該行程無消費紀錄</p>
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {paginatedExpenses.map((e, index) => (
-                  <div key={index} style={{ padding: '12px 14px', borderRadius: '12px', backgroundColor: '#f8fafc', border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={index} style={{ padding: '12px 14px', borderRadius: '12px', backgroundColor: '#ffffff', border: '1px solid #eee6db', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '14px' }}>{getCategoryIcon(e.category)}</span>
-                        <strong style={{ fontSize: '14px', color: '#0f172a' }}>{e.item}</strong>
+                        <strong style={{ fontSize: '14px', color: '#3d2b1f' }}>{e.item}</strong>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748b' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8c7663' }}>
                         <span>{e.date}</span>
                         <span>•</span>
-                        <span style={{ backgroundColor: '#e2e8f0', color: '#334155', padding: '1px 6px', borderRadius: '4px' }}>{e.category}</span>
-                        <span style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: '4px' }}>{e.paymentMethod}</span>
+                        <span style={{ backgroundColor: '#efe9e0', color: '#5c4033', padding: '1px 6px', borderRadius: '4px' }}>{e.category}</span>
+                        <span style={{ backgroundColor: '#f5efe6', color: '#735238', padding: '1px 6px', borderRadius: '4px' }}>{e.paymentMethod}</span>
                         {e.destination && <span>• {e.destination}</span>}
                       </div>
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#ea580c' : '#0284c7' }}>
+                      <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
                         HKD ${e.amountHKD.toFixed(2)}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      <div style={{ fontSize: '11px', color: '#a39281' }}>
                         {e.currency} ${e.amount}
                       </div>
                     </div>
@@ -537,15 +536,15 @@ export default function Home() {
                   <button 
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
                     disabled={currentPage === 1}
-                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: currentPage === 1 ? '#f8fafc' : '#ffffff', color: '#475569', fontSize: '12px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2d7c7', background: currentPage === 1 ? '#f6f3ed' : '#ffffff', color: '#5c4033', fontSize: '12px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
                   >
                     ◀ 上一頁
                   </button>
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>第 {currentPage} / {totalPages} 頁</span>
+                  <span style={{ fontSize: '12px', color: '#7c6a58' }}>第 {currentPage} / {totalPages} 頁</span>
                   <button 
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
                     disabled={currentPage === totalPages}
-                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: currentPage === totalPages ? '#f8fafc' : '#ffffff', color: '#475569', fontSize: '12px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2d7c7', background: currentPage === totalPages ? '#f6f3ed' : '#ffffff', color: '#5c4033', fontSize: '12px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
                   >
                     下一頁 ▶
                   </button>
