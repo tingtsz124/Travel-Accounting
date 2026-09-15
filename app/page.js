@@ -7,7 +7,7 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mM
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
 
 const CATEGORIES = [
-  'Share', 'wiki', '機票', '酒店', '飲食', '衣物', '手信', '退稅',
+  '未分類', 'Share', 'wiki', '機票', '酒店', '飲食', '衣物', '手信', '退稅',
   '演唱會', '交通', '娛樂', '公仔/扭蛋', '團費', '代購', '雜項',
   'ZB1', '家', '門票', '日用品', '化妝品/飾物', '文具', '禮物'
 ];
@@ -40,18 +40,39 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
+  // 表單狀態
   const [form, setForm] = useState({
     item: '',
     currency: 'HKD',
     amount: '',
     exchangeRate: '1.0',
-    category: '飲食',
+    category: '未分類', // 1. 類別預設為 "未分類"
     date: new Date().toISOString().split('T')[0],
     paymentMethod: '現金',
     note: '',
     destination: '',
     tripDate: ''
   });
+
+  // 2. 網頁載入時，自動讀取上一次使用的選項 (localStorage)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const lastCurrency = localStorage.getItem('last_currency');
+      const lastPayment = localStorage.getItem('last_paymentMethod');
+      const lastTripDate = localStorage.getItem('last_tripDate');
+      const lastDate = localStorage.getItem('last_date');
+
+      setForm(prev => ({
+        ...prev,
+        currency: lastCurrency || prev.currency,
+        paymentMethod: lastPayment || prev.paymentMethod,
+        tripDate: lastTripDate || prev.tripDate,
+        date: lastDate || prev.date,
+        // 如果有上次記錄的貨幣，帶入對應的匯率
+        exchangeRate: lastCurrency ? (defaultRates[lastCurrency] || '1.0') : prev.exchangeRate
+      }));
+    }
+  }, [defaultRates]);
 
   // 自動抓取 Sheet 中所有不重複的「旅程日期」選項
   const uniqueTripDates = useMemo(() => {
@@ -67,7 +88,6 @@ export default function Home() {
       const res = await fetch(GOOGLE_SCRIPT_URL);
       const data = await res.json();
       
-      // 相容舊格式與新格式
       if (Array.isArray(data)) {
         setExpenses(data.reverse());
       } else if (data && data.expenses) {
@@ -122,6 +142,14 @@ export default function Home() {
       amountHKD: parseFloat(calculatedHKD)
     };
 
+    // 3. 儲存本次使用的選項至 localStorage，供下一次新增時預設使用
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('last_currency', form.currency);
+      localStorage.setItem('last_paymentMethod', form.paymentMethod);
+      localStorage.setItem('last_tripDate', finalTripDate);
+      localStorage.setItem('last_date', form.date);
+    }
+
     if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
       try {
         await fetch(GOOGLE_SCRIPT_URL, {
@@ -138,7 +166,22 @@ export default function Home() {
       }
     }
 
-    setForm(prev => ({ ...prev, item: '', amount: '', note: '' }));
+    // 重置表單：保留上一筆使用的貨幣、付款方式、旅程日期、消費日期；類別重置為 "未分類"
+    setForm(prev => ({
+      ...prev,
+      item: '',
+      amount: '',
+      category: '未分類',
+      note: '',
+      tripDate: finalTripDate
+    }));
+    
+    // 如果剛剛是手動輸入新旅程日期，送出後切換回下拉選擇模式
+    if (isCustomTripDate) {
+      setIsCustomTripDate(false);
+      setCustomTripDate('');
+    }
+
     setIsSubmitting(false);
   };
 
@@ -355,7 +398,7 @@ export default function Home() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#555', flexWrap: 'wrap', gap: '5px' }}>
               <span>wiki 總計: <strong>HKD ${excludedItemsSummary.wikiTotal.toFixed(2)}</strong></span>
-              <span>代購 總计: <strong>HKD ${excludedItemsSummary.proxyTotal.toFixed(2)}</strong></span>
+              <span>代購 總計: <strong>HKD ${excludedItemsSummary.proxyTotal.toFixed(2)}</strong></span>
             </div>
             <div style={{ fontSize: '13px', color: '#137333', borderTop: '1px dashed #e0e0e0', paddingTop: '4px', marginTop: '4px', fontWeight: 'bold' }}>
               小計總和: HKD ${excludedItemsSummary.combinedTotal.toFixed(2)}
