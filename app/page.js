@@ -213,6 +213,21 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
+  // 格式化日期為 YYYY-MM-DD 以適應 input[type="date"]
+  const formatDateForInput = (dateStr) => {
+    if (!dateStr) return new Date().toISOString().split('T')[0];
+    
+    // 將 2027/2/28 或 2027/02/28 轉為 [2027, 2, 28]
+    const parts = dateStr.replace(/-/g, '/').split('/');
+    if (parts.length === 3) {
+      const year = parts[0];
+      const month = parts[1].padStart(2, '0');
+      const day = parts[2].padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    return dateStr;
+  };
+
   // 複製點擊項目的資料到新增表單
   const handleCopyExpenseToForm = (item) => {
     setForm(prev => ({
@@ -226,7 +241,7 @@ export default function Home() {
       note: item.note || '',
       destination: item.destination || '',
       tripDate: item.tripDate || prev.tripDate,
-      date: item.date || prev.date
+      date: formatDateForInput(item.date)
     }));
 
     // 滾動畫面至上方表單
@@ -265,7 +280,7 @@ export default function Home() {
     return personalExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
   }, [personalExpenses]);
 
-  // 獨立小計 (自身總和，移除合計)
+  // 獨立小計 (自身總和)
   const excludedItemsSummary = useMemo(() => {
     let wikiTotal = 0;
     let proxyTotal = 0;
@@ -346,7 +361,6 @@ export default function Home() {
     );
   };
 
-  // 木質質感統一輸入框
   const inputStyle = {
     padding: '12px 14px',
     borderRadius: '10px',
@@ -376,7 +390,7 @@ export default function Home() {
           <p style={{ fontSize: '12px', color: '#8c7663', marginTop: '4px' }}>溫暖木質風格 • 輕鬆紀錄每筆花費</p>
         </div>
 
-        {/* 1️⃣ 第一順位：新增消費表單 (溫暖奶油白卡片) */}
+        {/* 1️⃣ 第一順位：新增消費表單 */}
         <form onSubmit={handleSubmit} style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>✍️ 新增消費紀錄</h3>
           
@@ -467,7 +481,7 @@ export default function Home() {
           </div>
         </form>
 
-        {/* 2️⃣ 第二順位：消費概覽與統計 (已移除多餘括號與文字) */}
+        {/* 2️⃣ 第二順位：消費概覽與統計 */}
         <div style={{ 
           backgroundColor: '#f5efe6', 
           border: '1px solid #e6dcce',
@@ -506,7 +520,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 獨立小計 (已刪除合計，僅留 wiki/代購 自身總和) */}
+          {/* 獨立小計 */}
           <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e8dec8' }}>
             <div style={{ fontSize: '12px', color: '#8c7663', fontWeight: '600', marginBottom: '6px' }}>
               🛍️ 獨立小計
@@ -524,7 +538,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3️⃣ 第三順位：明細列表 (支援多選類別 Filter 與點擊複製項目) */}
+        {/* 3️⃣ 第三順位：明細列表 */}
         <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({finalFilteredExpenses.length})</h3>
@@ -599,18 +613,22 @@ export default function Home() {
                       display: 'flex', 
                       justify: 'space-between', 
                       alignItems: 'center',
+                      gap: '12px',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease-in-out'
                     }}
                     onMouseEnter={(evt) => evt.currentTarget.style.borderColor = '#8c6d58'}
                     onMouseLeave={(evt) => evt.currentTarget.style.borderColor = '#eee6db'}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {/* 左側：項目與細節說明 (自動佔滿剩餘空間) */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '14px' }}>{getCategoryIcon(e.category)}</span>
-                        <strong style={{ fontSize: '14px', color: '#3d2b1f' }}>{e.item}</strong>
+                        <span style={{ fontSize: '14px', flexShrink: 0 }}>{getCategoryIcon(e.category)}</span>
+                        <strong style={{ fontSize: '14px', color: '#3d2b1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {e.item}
+                        </strong>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8c7663' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8c7663', flexWrap: 'wrap' }}>
                         <span>{e.date}</span>
                         <span>•</span>
                         <span style={{ backgroundColor: '#efe9e0', color: '#5c4033', padding: '1px 6px', borderRadius: '4px' }}>{e.category}</span>
@@ -619,9 +637,10 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div style={{ textAlign: 'right' }}>
+                    {/* 右側：金額資訊 (固定靠最右側) */}
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
-                        HKD ${e.amountHKD.toFixed(2)}
+                        HKD ${e.amountHKD ? e.amountHKD.toFixed(2) : '0.00'}
                       </div>
                       <div style={{ fontSize: '11px', color: '#a39281' }}>
                         {e.currency} ${e.amount}
