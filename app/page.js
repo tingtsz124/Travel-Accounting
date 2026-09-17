@@ -52,10 +52,13 @@ export default function Home() {
     TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
   });
 
-  // 篩選與自訂旅程狀態
+  // 行程篩選與自訂旅程狀態
   const [filterTripDate, setFilterTripDate] = useState('ALL');
   const [isCustomTripDate, setIsCustomTripDate] = useState(false);
   const [customTripDate, setCustomTripDate] = useState('');
+
+  // 多選類別 Filter 狀態 (預設空陣列代表全選)
+  const [selectedCategories, setSelectedCategories] = useState([]);
 
   // 分頁狀態
   const [currentPage, setCurrentPage] = useState(1);
@@ -139,7 +142,7 @@ export default function Home() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterTripDate]);
+  }, [filterTripDate, selectedCategories]);
 
   const handleCurrencyChange = (selectedCurrency) => {
     const defaultRate = defaultRates[selectedCurrency] || '1.0';
@@ -210,28 +213,68 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
-  const filteredExpenses = useMemo(() => {
+  // 複製點擊項目的資料到新增表單
+  const handleCopyExpenseToForm = (item) => {
+    setForm(prev => ({
+      ...prev,
+      item: item.item || '',
+      currency: item.currency || 'HKD',
+      amount: item.amount ? String(item.amount) : '',
+      exchangeRate: item.exchangeRate ? String(item.exchangeRate) : (defaultRates[item.currency] || '1.0'),
+      category: item.category || '未分類',
+      paymentMethod: item.paymentMethod || '現金',
+      note: item.note || '',
+      destination: item.destination || '',
+      tripDate: item.tripDate || prev.tripDate,
+      date: item.date || prev.date
+    }));
+
+    // 滾動畫面至上方表單
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 類別 Filter 切換邏輯
+  const toggleCategoryFilter = (categoryName) => {
+    setSelectedCategories(prev => {
+      if (prev.includes(categoryName)) {
+        return prev.filter(c => c !== categoryName);
+      } else {
+        return [...prev, categoryName];
+      }
+    });
+  };
+
+  // 依行程 Filter 的所有資料
+  const filteredByTripExpenses = useMemo(() => {
     if (filterTripDate === 'ALL') return expenses;
     return expenses.filter(e => e.tripDate === filterTripDate);
   }, [expenses, filterTripDate]);
 
+  // 依行程 + 類別 Filter 的最終明細資料
+  const finalFilteredExpenses = useMemo(() => {
+    if (selectedCategories.length === 0) return filteredByTripExpenses;
+    return filteredByTripExpenses.filter(e => selectedCategories.includes(e.category));
+  }, [filteredByTripExpenses, selectedCategories]);
+
+  // 個人開支 (排除 wiki 和 代購)
   const personalExpenses = useMemo(() => {
-    return filteredExpenses.filter(e => e.category !== 'wiki' && e.category !== '代購');
-  }, [filteredExpenses]);
+    return filteredByTripExpenses.filter(e => e.category !== 'wiki' && e.category !== '代購');
+  }, [filteredByTripExpenses]);
 
   const grandTotal = useMemo(() => {
     return personalExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
   }, [personalExpenses]);
 
+  // 獨立小計 (自身總和，移除合計)
   const excludedItemsSummary = useMemo(() => {
     let wikiTotal = 0;
     let proxyTotal = 0;
-    filteredExpenses.forEach(e => {
+    filteredByTripExpenses.forEach(e => {
       if (e.category === 'wiki') wikiTotal += (e.amountHKD || 0);
       if (e.category === '代購') proxyTotal += (e.amountHKD || 0);
     });
-    return { wikiTotal, proxyTotal, combinedTotal: wikiTotal + proxyTotal };
-  }, [filteredExpenses]);
+    return { wikiTotal, proxyTotal };
+  }, [filteredByTripExpenses]);
 
   const categoryData = useMemo(() => {
     const map = {};
@@ -249,11 +292,11 @@ export default function Home() {
       .sort((a, b) => b.value - a.value);
   }, [personalExpenses, grandTotal]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / itemsPerPage));
+  const totalPages = Math.max(1, Math.ceil(finalFilteredExpenses.length / itemsPerPage));
   const paginatedExpenses = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
-    return filteredExpenses.slice(start, start + itemsPerPage);
-  }, [filteredExpenses, currentPage]);
+    return finalFilteredExpenses.slice(start, start + itemsPerPage);
+  }, [finalFilteredExpenses, currentPage]);
 
   const renderPieChart = () => {
     if (grandTotal === 0 || categoryData.length === 0) {
@@ -424,7 +467,7 @@ export default function Home() {
           </div>
         </form>
 
-        {/* 2️⃣ 第二順位：消費概覽與統計 (淺色木質奶茶色卡片) */}
+        {/* 2️⃣ 第二順位：消費概覽與統計 (已移除多餘括號與文字) */}
         <div style={{ 
           backgroundColor: '#f5efe6', 
           border: '1px solid #e6dcce',
@@ -456,22 +499,21 @@ export default function Home() {
 
           <div style={{ marginBottom: '16px' }}>
             <div style={{ fontSize: '12px', color: '#8c7663' }}>
-              {filterTripDate === 'ALL' ? '個人開支總計 (排除 wiki/代購)' : `行程 [${filterTripDate}] 個人花費`}
+              {filterTripDate === 'ALL' ? '個人開支總計' : `行程 [${filterTripDate}] 個人花費`}
             </div>
             <div style={{ fontSize: '28px', fontWeight: '800', color: '#5c4033', marginTop: '2px', letterSpacing: '-0.03em' }}>
               HKD ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
 
-          {/* 獨立統計項目 */}
+          {/* 獨立小計 (已刪除合計，僅留 wiki/代購 自身總和) */}
           <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e8dec8' }}>
             <div style={{ fontSize: '12px', color: '#8c7663', fontWeight: '600', marginBottom: '6px' }}>
-              🛍️ 獨立小計 (wiki / 代購)
+              🛍️ 獨立小計
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#4a3525' }}>
+            <div style={{ display: 'flex', gap: '20px', fontSize: '12px', color: '#4a3525' }}>
               <span>wiki: <strong>${excludedItemsSummary.wikiTotal.toFixed(1)}</strong></span>
               <span>代購: <strong>${excludedItemsSummary.proxyTotal.toFixed(1)}</strong></span>
-              <span style={{ color: '#a0522d', fontWeight: 'bold' }}>合計: ${excludedItemsSummary.combinedTotal.toFixed(1)}</span>
             </div>
           </div>
 
@@ -482,10 +524,10 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3️⃣ 第三順位：明細列表 (米白卡片) */}
+        {/* 3️⃣ 第三順位：明細列表 (支援多選類別 Filter 與點擊複製項目) */}
         <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({filteredExpenses.length})</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({finalFilteredExpenses.length})</h3>
             <button 
               onClick={fetchFromGoogleSheet} 
               disabled={isLoading} 
@@ -495,15 +537,74 @@ export default function Home() {
             </button>
           </div>
 
+          {/* 🏷️ 類別多選 Filter 區塊 */}
+          <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px dashed #e2d7c7' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', color: '#8c7663', fontWeight: '600' }}>🔍 依類別篩選 (點擊可多選)：</span>
+              {selectedCategories.length > 0 && (
+                <button 
+                  onClick={() => setSelectedCategories([])}
+                  style={{ background: 'none', border: 'none', color: '#a0522d', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  清除重設
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {CATEGORIES_WITH_ICONS.map(cat => {
+                const isSelected = selectedCategories.includes(cat.name);
+                return (
+                  <button
+                    key={cat.name}
+                    onClick={() => toggleCategoryFilter(cat.name)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '16px',
+                      fontSize: '11px',
+                      fontWeight: isSelected ? '600' : 'normal',
+                      border: isSelected ? '1px solid #5c4033' : '1px solid #e2d7c7',
+                      backgroundColor: isSelected ? '#5c4033' : '#ffffff',
+                      color: isSelected ? '#ffffff' : '#4a3525',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {cat.icon} {cat.name} {isSelected && '✓'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p style={{ fontSize: '11px', color: '#a39281', margin: '-4px 0 12px 0' }}>💡 提示：點擊任何一筆消費明細，可快速複製資料至上方表單。</p>
+
           {isLoading ? (
             <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>資料同步中...</p>
-          ) : filteredExpenses.length === 0 ? (
-            <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>該行程無消費紀錄</p>
+          ) : finalFilteredExpenses.length === 0 ? (
+            <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>該篩選條件下無消費紀錄</p>
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {paginatedExpenses.map((e, index) => (
-                  <div key={index} style={{ padding: '12px 14px', borderRadius: '12px', backgroundColor: '#ffffff', border: '1px solid #eee6db', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div 
+                    key={index} 
+                    onClick={() => handleCopyExpenseToForm(e)}
+                    title="點擊以複製此筆資料到新增表單"
+                    style={{ 
+                      padding: '12px 14px', 
+                      borderRadius: '12px', 
+                      backgroundColor: '#ffffff', 
+                      border: '1px solid #eee6db', 
+                      display: 'flex', 
+                      justify: 'space-between', 
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease-in-out'
+                    }}
+                    onMouseEnter={(evt) => evt.currentTarget.style.borderColor = '#8c6d58'}
+                    onMouseLeave={(evt) => evt.currentTarget.style.borderColor = '#eee6db'}
+                  >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '14px' }}>{getCategoryIcon(e.category)}</span>
