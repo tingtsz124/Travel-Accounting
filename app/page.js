@@ -153,11 +153,14 @@ export default function Home() {
     }));
   };
 
+  // 計算折合 HKD，若類別為 Share 則自動除以 2
   const calculatedHKD = useMemo(() => {
     const amt = parseFloat(form.amount) || 0;
     const rate = parseFloat(form.exchangeRate) || 1;
-    return (amt * rate).toFixed(2);
-  }, [form.amount, form.exchangeRate]);
+    const fullHKD = amt * rate;
+    const finalHKD = form.category === 'Share' ? fullHKD / 2 : fullHKD;
+    return finalHKD.toFixed(2);
+  }, [form.amount, form.exchangeRate, form.category]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -216,8 +219,6 @@ export default function Home() {
   // 格式化日期為 YYYY-MM-DD 以適應 input[type="date"]
   const formatDateForInput = (dateStr) => {
     if (!dateStr) return new Date().toISOString().split('T')[0];
-    
-    // 將 2027/2/28 或 2027/02/28 轉為 [2027, 2, 28]
     const parts = dateStr.replace(/-/g, '/').split('/');
     if (parts.length === 3) {
       const year = parts[0];
@@ -244,7 +245,6 @@ export default function Home() {
       date: formatDateForInput(item.date)
     }));
 
-    // 滾動畫面至上方表單
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -271,13 +271,29 @@ export default function Home() {
     return filteredByTripExpenses.filter(e => selectedCategories.includes(e.category));
   }, [filteredByTripExpenses, selectedCategories]);
 
+  // 計算實際使用的 HKD 金額（若為 Share 類別且 amountHKD 尚未除以 2，則自動計算除以 2 的金額）
+  const getItemFinalHKD = (e) => {
+    const rawAmt = parseFloat(e.amount) || 0;
+    const rate = parseFloat(e.exchangeRate) || 1;
+    const rawHKD = e.amountHKD !== undefined ? e.amountHKD : (rawAmt * rate);
+    
+    // 如果是 Share 類別，確保以除以 2 計算
+    if (e.category === 'Share') {
+      // 若原 amountHKD 與原始折算相近，代表未除過 2，幫其除以 2
+      if (Math.abs(rawHKD - (rawAmt * rate)) < 0.01) {
+        return rawHKD / 2;
+      }
+    }
+    return rawHKD;
+  };
+
   // 個人開支 (排除 wiki 和 代購)
   const personalExpenses = useMemo(() => {
     return filteredByTripExpenses.filter(e => e.category !== 'wiki' && e.category !== '代購');
   }, [filteredByTripExpenses]);
 
   const grandTotal = useMemo(() => {
-    return personalExpenses.reduce((sum, e) => sum + (e.amountHKD || 0), 0);
+    return personalExpenses.reduce((sum, e) => sum + getItemFinalHKD(e), 0);
   }, [personalExpenses]);
 
   // 獨立小計 (自身總和)
@@ -285,8 +301,8 @@ export default function Home() {
     let wikiTotal = 0;
     let proxyTotal = 0;
     filteredByTripExpenses.forEach(e => {
-      if (e.category === 'wiki') wikiTotal += (e.amountHKD || 0);
-      if (e.category === '代購') proxyTotal += (e.amountHKD || 0);
+      if (e.category === 'wiki') wikiTotal += getItemFinalHKD(e);
+      if (e.category === '代購') proxyTotal += getItemFinalHKD(e);
     });
     return { wikiTotal, proxyTotal };
   }, [filteredByTripExpenses]);
@@ -295,7 +311,7 @@ export default function Home() {
     const map = {};
     personalExpenses.forEach(e => {
       const cat = e.category || '未分類';
-      map[cat] = (map[cat] || 0) + (e.amountHKD || 0);
+      map[cat] = (map[cat] || 0) + getItemFinalHKD(e);
     });
 
     return Object.entries(map)
@@ -401,13 +417,14 @@ export default function Home() {
               <select value={form.currency} onChange={e => handleCurrencyChange(e.target.value)} style={inputStyle}>
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <input type="number" step="0.01" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
+              <input type="number" step="0.01" placeholder="金額 (輸入原價即可)" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
               <input type="number" step="0.0001" placeholder="匯率" value={form.exchangeRate} onChange={e => setForm({...form, exchangeRate: e.target.value})} style={inputStyle} />
-              <div style={{ backgroundColor: '#f5efe6', border: '1px solid #e0d5c1', padding: '10px', borderRadius: '10px', fontWeight: '600', fontSize: '13px', color: '#735238', textAlign: 'center' }}>
+              <div style={{ backgroundColor: '#f5efe6', border: '1px solid #e0d5c1', padding: '10px', borderRadius: '10px', fontWeight: '600', fontSize: '12px', color: '#735238', textAlign: 'center' }}>
                 折合 HKD ${calculatedHKD}
+                {form.category === 'Share' && <span style={{ display: 'block', fontSize: '10px', color: '#a0522d' }}>(Share 拆帳 ÷ 2)</span>}
               </div>
             </div>
 
@@ -600,54 +617,63 @@ export default function Home() {
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {paginatedExpenses.map((e, index) => (
-                  <div 
-                    key={index} 
-                    onClick={() => handleCopyExpenseToForm(e)}
-                    title="點擊以複製此筆資料到新增表單"
-                    style={{ 
-                      padding: '12px 14px', 
-                      borderRadius: '12px', 
-                      backgroundColor: '#ffffff', 
-                      border: '1px solid #eee6db', 
-                      display: 'flex', 
-                      justify: 'space-between', 
-                      alignItems: 'center',
-                      gap: '12px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease-in-out'
-                    }}
-                    onMouseEnter={(evt) => evt.currentTarget.style.borderColor = '#8c6d58'}
-                    onMouseLeave={(evt) => evt.currentTarget.style.borderColor = '#eee6db'}
-                  >
-                    {/* 左側：項目與細節說明 (自動佔滿剩餘空間) */}
-                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '14px', flexShrink: 0 }}>{getCategoryIcon(e.category)}</span>
-                        <strong style={{ fontSize: '14px', color: '#3d2b1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {e.item}
-                        </strong>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8c7663', flexWrap: 'wrap' }}>
-                        <span>{e.date}</span>
-                        <span>•</span>
-                        <span style={{ backgroundColor: '#efe9e0', color: '#5c4033', padding: '1px 6px', borderRadius: '4px' }}>{e.category}</span>
-                        <span style={{ backgroundColor: '#f5efe6', color: '#735238', padding: '1px 6px', borderRadius: '4px' }}>{e.paymentMethod}</span>
-                        {e.destination && <span>• {e.destination}</span>}
-                      </div>
-                    </div>
+                {paginatedExpenses.map((e, index) => {
+                  const finalHKD = getItemFinalHKD(e);
+                  const isShare = e.category === 'Share';
 
-                    {/* 右側：金額資訊 (固定靠最右側) */}
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
-                        HKD ${e.amountHKD ? e.amountHKD.toFixed(2) : '0.00'}
+                  return (
+                    <div 
+                      key={index} 
+                      onClick={() => handleCopyExpenseToForm(e)}
+                      title="點擊以複製此筆資料到新增表單"
+                      style={{ 
+                        padding: '12px 14px', 
+                        borderRadius: '12px', 
+                        backgroundColor: '#ffffff', 
+                        border: '1px solid #eee6db', 
+                        display: 'flex', 
+                        justify: 'space-between', 
+                        alignItems: 'center',
+                        gap: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease-in-out'
+                      }}
+                      onMouseEnter={(evt) => evt.currentTarget.style.borderColor = '#8c6d58'}
+                      onMouseLeave={(evt) => evt.currentTarget.style.borderColor = '#eee6db'}
+                    >
+                      {/* 左側：項目與細節說明 */}
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '14px', flexShrink: 0 }}>{getCategoryIcon(e.category)}</span>
+                          <strong style={{ fontSize: '14px', color: '#3d2b1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {e.item}
+                          </strong>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8c7663', flexWrap: 'wrap' }}>
+                          <span>{e.date}</span>
+                          <span>•</span>
+                          <span style={{ backgroundColor: '#efe9e0', color: '#5c4033', padding: '1px 6px', borderRadius: '4px' }}>{e.category}</span>
+                          <span style={{ backgroundColor: '#f5efe6', color: '#735238', padding: '1px 6px', borderRadius: '4px' }}>{e.paymentMethod}</span>
+                          {e.destination && <span>• {e.destination}</span>}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#a39281' }}>
-                        {e.currency} ${e.amount}
+
+                      {/* 右側：金額資訊 */}
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
+                          HKD ${finalHKD.toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#a39281' }}>
+                          {isShare ? (
+                            <span style={{ color: '#b8860b' }}>原價 {e.currency} ${e.amount} (÷2)</span>
+                          ) : (
+                            `${e.currency} $${e.amount}`
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* 分頁按鈕 */}
