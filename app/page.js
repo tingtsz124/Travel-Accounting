@@ -57,7 +57,7 @@ export default function Home() {
   const [isCustomTripDate, setIsCustomTripDate] = useState(false);
   const [customTripDate, setCustomTripDate] = useState('');
 
-  // 多選類別 Filter 狀態 (預設空陣列代表全選)
+  // 多選類別 Filter 狀態
   const [selectedCategories, setSelectedCategories] = useState([]);
 
   // 分頁狀態
@@ -153,14 +153,17 @@ export default function Home() {
     }));
   };
 
-  // 計算折合 HKD，若類別為 Share 則自動除以 2
+  // 計算實際金額（若選 Share，金額即為原價 ÷ 2）
+  const actualAmount = useMemo(() => {
+    const rawAmt = parseFloat(form.amount) || 0;
+    return form.category === 'Share' ? rawAmt / 2 : rawAmt;
+  }, [form.amount, form.category]);
+
+  // 計算折合 HKD 金額
   const calculatedHKD = useMemo(() => {
-    const amt = parseFloat(form.amount) || 0;
     const rate = parseFloat(form.exchangeRate) || 1;
-    const fullHKD = amt * rate;
-    const finalHKD = form.category === 'Share' ? fullHKD / 2 : fullHKD;
-    return finalHKD.toFixed(2);
-  }, [form.amount, form.exchangeRate, form.category]);
+    return (actualAmount * rate).toFixed(2);
+  }, [actualAmount, form.exchangeRate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -172,8 +175,7 @@ export default function Home() {
     const newExpense = {
       id: Date.now(),
       ...form,
-      tripDate: finalTripDate,
-      amountHKD: parseFloat(calculatedHKD)
+      tripDate: finalTripDate
     };
 
     if (typeof window !== 'undefined') {
@@ -216,7 +218,6 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
-  // 格式化日期為 YYYY-MM-DD 以適應 input[type="date"]
   const formatDateForInput = (dateStr) => {
     if (!dateStr) return new Date().toISOString().split('T')[0];
     const parts = dateStr.replace(/-/g, '/').split('/');
@@ -229,7 +230,6 @@ export default function Home() {
     return dateStr;
   };
 
-  // 複製點擊項目的資料到新增表單
   const handleCopyExpenseToForm = (item) => {
     setForm(prev => ({
       ...prev,
@@ -248,7 +248,6 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 類別 Filter 切換邏輯
   const toggleCategoryFilter = (categoryName) => {
     setSelectedCategories(prev => {
       if (prev.includes(categoryName)) {
@@ -259,35 +258,26 @@ export default function Home() {
     });
   };
 
-  // 依行程 Filter 的所有資料
   const filteredByTripExpenses = useMemo(() => {
     if (filterTripDate === 'ALL') return expenses;
     return expenses.filter(e => e.tripDate === filterTripDate);
   }, [expenses, filterTripDate]);
 
-  // 依行程 + 類別 Filter 的最終明細資料
   const finalFilteredExpenses = useMemo(() => {
     if (selectedCategories.length === 0) return filteredByTripExpenses;
     return filteredByTripExpenses.filter(e => selectedCategories.includes(e.category));
   }, [filteredByTripExpenses, selectedCategories]);
 
-  // 計算實際使用的 HKD 金額（若為 Share 類別且 amountHKD 尚未除以 2，則自動計算除以 2 的金額）
+  // 取得單筆資料的折合 HKD 數值
   const getItemFinalHKD = (e) => {
-    const rawAmt = parseFloat(e.amount) || 0;
-    const rate = parseFloat(e.exchangeRate) || 1;
-    const rawHKD = e.amountHKD !== undefined ? e.amountHKD : (rawAmt * rate);
-    
-    // 如果是 Share 類別，確保以除以 2 計算
-    if (e.category === 'Share') {
-      // 若原 amountHKD 與原始折算相近，代表未除過 2，幫其除以 2
-      if (Math.abs(rawHKD - (rawAmt * rate)) < 0.01) {
-        return rawHKD / 2;
-      }
+    if (e.amountHKD !== undefined && !isNaN(parseFloat(e.amountHKD))) {
+      return parseFloat(e.amountHKD);
     }
-    return rawHKD;
+    const amt = parseFloat(e.amount) || 0;
+    const rate = parseFloat(e.exchangeRate) || 1;
+    return amt * rate;
   };
 
-  // 個人開支 (排除 wiki 和 代購)
   const personalExpenses = useMemo(() => {
     return filteredByTripExpenses.filter(e => e.category !== 'wiki' && e.category !== '代購');
   }, [filteredByTripExpenses]);
@@ -296,7 +286,6 @@ export default function Home() {
     return personalExpenses.reduce((sum, e) => sum + getItemFinalHKD(e), 0);
   }, [personalExpenses]);
 
-  // 獨立小計 (自身總和)
   const excludedItemsSummary = useMemo(() => {
     let wikiTotal = 0;
     let proxyTotal = 0;
@@ -406,7 +395,7 @@ export default function Home() {
           <p style={{ fontSize: '12px', color: '#8c7663', marginTop: '4px' }}>溫暖木質風格 • 輕鬆紀錄每筆花費</p>
         </div>
 
-        {/* 1️⃣ 第一順位：新增消費表單 */}
+        {/* 新增消費表單 */}
         <form onSubmit={handleSubmit} style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>✍️ 新增消費紀錄</h3>
           
@@ -417,14 +406,18 @@ export default function Home() {
               <select value={form.currency} onChange={e => handleCurrencyChange(e.target.value)} style={inputStyle}>
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <input type="number" step="0.01" placeholder="金額 (輸入原價即可)" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
+              <input type="number" step="0.01" placeholder="金額 (原價)" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
               <input type="number" step="0.0001" placeholder="匯率" value={form.exchangeRate} onChange={e => setForm({...form, exchangeRate: e.target.value})} style={inputStyle} />
               <div style={{ backgroundColor: '#f5efe6', border: '1px solid #e0d5c1', padding: '10px', borderRadius: '10px', fontWeight: '600', fontSize: '12px', color: '#735238', textAlign: 'center' }}>
                 折合 HKD ${calculatedHKD}
-                {form.category === 'Share' && <span style={{ display: 'block', fontSize: '10px', color: '#a0522d' }}>(Share 拆帳 ÷ 2)</span>}
+                {form.category === 'Share' && (
+                  <span style={{ display: 'block', fontSize: '10px', color: '#a0522d', marginTop: '2px' }}>
+                    (寫入金額: {form.currency} ${actualAmount.toFixed(2)})
+                  </span>
+                )}
               </div>
             </div>
 
@@ -498,7 +491,7 @@ export default function Home() {
           </div>
         </form>
 
-        {/* 2️⃣ 第二順位：消費概覽與統計 */}
+        {/* 消費概覽與統計 */}
         <div style={{ 
           backgroundColor: '#f5efe6', 
           border: '1px solid #e6dcce',
@@ -555,7 +548,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3️⃣ 第三順位：明細列表 */}
+        {/* 明細列表 */}
         <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({finalFilteredExpenses.length})</h3>
@@ -568,7 +561,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* 🏷️ 類別多選 Filter 區塊 */}
+          {/* 類別 Filter */}
           <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px dashed #e2d7c7' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '12px', color: '#8c7663', fontWeight: '600' }}>🔍 依類別篩選 (點擊可多選)：</span>
@@ -619,7 +612,6 @@ export default function Home() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {paginatedExpenses.map((e, index) => {
                   const finalHKD = getItemFinalHKD(e);
-                  const isShare = e.category === 'Share';
 
                   return (
                     <div 
@@ -664,11 +656,7 @@ export default function Home() {
                           HKD ${finalHKD.toFixed(2)}
                         </div>
                         <div style={{ fontSize: '11px', color: '#a39281' }}>
-                          {isShare ? (
-                            <span style={{ color: '#b8860b' }}>原價 {e.currency} ${e.amount} (÷2)</span>
-                          ) : (
-                            `${e.currency} $${e.amount}`
-                          )}
+                          {e.currency} ${parseFloat(e.amount || 0).toFixed(2)}
                         </div>
                       </div>
                     </div>
