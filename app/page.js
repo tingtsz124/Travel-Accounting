@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 
-// ⚠️ 請將下方網址替換為你在 Google Apps Script 取得的部署網址
+// ⚠️ 請確保下方網址為你正確的 Google Apps Script 部署網址
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec';
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
@@ -78,6 +78,40 @@ export default function Home() {
     tripDate: ''
   });
 
+  // 從 Google Sheet 抓取最新資料與匯率表
+  const fetchFromGoogleSheet = async () => {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(GOOGLE_SCRIPT_URL);
+      const data = await res.json();
+      
+      let fetchedExpenses = [];
+      if (Array.isArray(data)) {
+        fetchedExpenses = data.reverse();
+      } else if (data && data.expenses) {
+        fetchedExpenses = data.expenses.reverse();
+        if (data.defaultRates) {
+          setDefaultRates(data.defaultRates);
+          // 如果目前的匯率是預設值，自動更新為 Rates 頁面的真實匯率
+          setForm(prev => ({
+            ...prev,
+            exchangeRate: data.defaultRates[prev.currency] || prev.exchangeRate
+          }));
+        }
+      }
+      setExpenses(fetchedExpenses);
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFromGoogleSheet();
+  }, []);
+
   // 自動還原上次選項
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -114,32 +148,6 @@ export default function Home() {
     return Array.from(new Set(dates));
   }, [expenses]);
 
-  const fetchFromGoogleSheet = async () => {
-    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
-    setIsLoading(true);
-    try {
-      const res = await fetch(GOOGLE_SCRIPT_URL);
-      const data = await res.json();
-      
-      if (Array.isArray(data)) {
-        setExpenses(data.reverse());
-      } else if (data && data.expenses) {
-        setExpenses(data.expenses.reverse());
-        if (data.defaultRates) {
-          setDefaultRates(data.defaultRates);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch data:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchFromGoogleSheet();
-  }, []);
-
   useEffect(() => {
     setCurrentPage(1);
   }, [filterTripDate, selectedCategories]);
@@ -153,7 +161,7 @@ export default function Home() {
     }));
   };
 
-  // 計算實際金額（若選 Share，金額即為原價 ÷ 2）
+  // 計算實際個人金額（若選 Share，金額即為原價 ÷ 2）
   const actualAmount = useMemo(() => {
     const rawAmt = parseFloat(form.amount) || 0;
     return form.category === 'Share' ? rawAmt / 2 : rawAmt;
@@ -172,9 +180,14 @@ export default function Home() {
     const finalTripDate = isCustomTripDate ? customTripDate : form.tripDate;
     setIsSubmitting(true);
 
+    // 若類別為 Share，金額欄位寫入 "=原價/2" 的 Excel 公式
+    const rawAmt = parseFloat(form.amount) || 0;
+    const amountToSend = form.category === 'Share' ? `=${rawAmt}/2` : rawAmt;
+
     const newExpense = {
       id: Date.now(),
       ...form,
+      amount: amountToSend,
       tripDate: finalTripDate
     };
 
@@ -231,11 +244,22 @@ export default function Home() {
   };
 
   const handleCopyExpenseToForm = (item) => {
+    // 從字串或公式中解析出原始輸入數值
+    let rawAmountVal = '';
+    if (item.amount) {
+      const strAmt = String(item.amount);
+      if (strAmt.startsWith('=')) {
+        rawAmountVal = strAmt.replace('=', '').split('/')[0];
+      } else {
+        rawAmountVal = strAmt;
+      }
+    }
+
     setForm(prev => ({
       ...prev,
       item: item.item || '',
       currency: item.currency || 'HKD',
-      amount: item.amount ? String(item.amount) : '',
+      amount: rawAmountVal,
       exchangeRate: item.exchangeRate ? String(item.exchangeRate) : (defaultRates[item.currency] || '1.0'),
       category: item.category || '未分類',
       paymentMethod: item.paymentMethod || '現金',
@@ -268,14 +292,29 @@ export default function Home() {
     return filteredByTripExpenses.filter(e => selectedCategories.includes(e.category));
   }, [filteredByTripExpenses, selectedCategories]);
 
-  // 取得單筆資料的折合 HKD 數值
-  const getItemFinalHKD = (e) => {
-    if (e.amountHKD !== undefined && !isNaN(parseFloat(e.amountHKD))) {
-      return parseFloat(e.amountHKD);
+  // 解析單筆資料的實際數值與原價數值
+  const parseExpenseAmount = (e) => {
+    let amtNum = 0;
+    let origNum = 0;
+    const strAmt = String(e.amount || '');
+
+    if (strAmt.startsWith('=')) {
+      // 處理 "=200/2" 公式
+      const expr = strAmt.replace('=', '');
+      const parts = expr.split('/');
+      origNum = parseFloat(parts[0]) || 0;
+      amtNum = parts[1] ? origNum / parseFloat(parts[1]) : origNum;
+    } else {
+      amtNum = parseFloat(strAmt) || 0;
+      origNum = e.category === 'Share' ? amtNum * 2 : amtNum;
     }
-    const amt = parseFloat(e.amount) || 0;
+
     const rate = parseFloat(e.exchangeRate) || 1;
-    return amt * rate;
+    const hkdVal = (e.amountHKD !== undefined && !isNaN(parseFloat(e.amountHKD))) 
+      ? parseFloat(e.amountHKD) 
+      : (amtNum * rate);
+
+    return { amtNum, origNum, hkdVal };
   };
 
   const personalExpenses = useMemo(() => {
@@ -283,15 +322,21 @@ export default function Home() {
   }, [filteredByTripExpenses]);
 
   const grandTotal = useMemo(() => {
-    return personalExpenses.reduce((sum, e) => sum + getItemFinalHKD(e), 0);
+    return personalExpenses.reduce((sum, e) => sum + parseExpenseAmount(e).hkdVal, 0);
   }, [personalExpenses]);
+
+  // 目前篩選明細的總計金額 (動態計算)
+  const currentFilteredTotal = useMemo(() => {
+    return finalFilteredExpenses.reduce((sum, e) => sum + parseExpenseAmount(e).hkdVal, 0);
+  }, [finalFilteredExpenses]);
 
   const excludedItemsSummary = useMemo(() => {
     let wikiTotal = 0;
     let proxyTotal = 0;
     filteredByTripExpenses.forEach(e => {
-      if (e.category === 'wiki') wikiTotal += getItemFinalHKD(e);
-      if (e.category === '代購') proxyTotal += getItemFinalHKD(e);
+      const { hkdVal } = parseExpenseAmount(e);
+      if (e.category === 'wiki') wikiTotal += hkdVal;
+      if (e.category === '代購') proxyTotal += hkdVal;
     });
     return { wikiTotal, proxyTotal };
   }, [filteredByTripExpenses]);
@@ -300,7 +345,7 @@ export default function Home() {
     const map = {};
     personalExpenses.forEach(e => {
       const cat = e.category || '未分類';
-      map[cat] = (map[cat] || 0) + getItemFinalHKD(e);
+      map[cat] = (map[cat] || 0) + parseExpenseAmount(e).hkdVal;
     });
 
     return Object.entries(map)
@@ -415,7 +460,7 @@ export default function Home() {
                 折合 HKD ${calculatedHKD}
                 {form.category === 'Share' && (
                   <span style={{ display: 'block', fontSize: '10px', color: '#a0522d', marginTop: '2px' }}>
-                    (寫入金額: {form.currency} ${actualAmount.toFixed(2)})
+                    (寫入公式: ={parseFloat(form.amount || 0)}/2)
                   </span>
                 )}
               </div>
@@ -551,7 +596,12 @@ export default function Home() {
         {/* 明細列表 */}
         <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({finalFilteredExpenses.length})</h3>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>📋 消費明細 ({finalFilteredExpenses.length})</h3>
+              <div style={{ fontSize: '12px', color: '#a0522d', fontWeight: '600', marginTop: '2px' }}>
+                當前篩選小計: HKD ${currentFilteredTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
             <button 
               onClick={fetchFromGoogleSheet} 
               disabled={isLoading} 
@@ -611,7 +661,8 @@ export default function Home() {
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {paginatedExpenses.map((e, index) => {
-                  const finalHKD = getItemFinalHKD(e);
+                  const { amtNum, origNum, hkdVal } = parseExpenseAmount(e);
+                  const isShare = e.category === 'Share';
 
                   return (
                     <div 
@@ -653,10 +704,14 @@ export default function Home() {
                       {/* 右側：金額資訊 */}
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
-                          HKD ${finalHKD.toFixed(2)}
+                          HKD ${hkdVal.toFixed(2)}
                         </div>
                         <div style={{ fontSize: '11px', color: '#a39281' }}>
-                          {e.currency} ${parseFloat(e.amount || 0).toFixed(2)}
+                          {isShare ? (
+                            `${e.currency} $${amtNum.toFixed(2)} (原價 ${e.currency} $${origNum.toFixed(2)})`
+                          ) : (
+                            `${e.currency} $${amtNum.toFixed(2)}`
+                          )}
                         </div>
                       </div>
                     </div>
