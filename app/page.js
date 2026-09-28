@@ -78,7 +78,7 @@ export default function Home() {
     tripDate: ''
   });
 
-  // 從 Google Sheet 抓取最新資料與匯率表
+  // 從 Google Sheet 抓取最新資料與 Rates 分頁最新匯率
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
@@ -87,20 +87,27 @@ export default function Home() {
       const data = await res.json();
       
       let fetchedExpenses = [];
+      let fetchedRates = null;
+
       if (Array.isArray(data)) {
         fetchedExpenses = data.reverse();
       } else if (data && data.expenses) {
         fetchedExpenses = data.expenses.reverse();
         if (data.defaultRates) {
-          setDefaultRates(data.defaultRates);
-          // 如果目前的匯率是預設值，自動更新為 Rates 頁面的真實匯率
-          setForm(prev => ({
-            ...prev,
-            exchangeRate: data.defaultRates[prev.currency] || prev.exchangeRate
-          }));
+          fetchedRates = data.defaultRates;
         }
       }
+
       setExpenses(fetchedExpenses);
+
+      if (fetchedRates) {
+        setDefaultRates(fetchedRates);
+        // 強制更新目前選取幣別的最新匯率
+        setForm(prev => ({
+          ...prev,
+          exchangeRate: fetchedRates[prev.currency] || prev.exchangeRate
+        }));
+      }
     } catch (err) {
       console.error('Failed to fetch data:', err);
     } finally {
@@ -112,7 +119,7 @@ export default function Home() {
     fetchFromGoogleSheet();
   }, []);
 
-  // 自動還原上次選項
+  // 自動還原上次歷史選項
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const lastCurrency = localStorage.getItem('last_currency');
@@ -152,6 +159,7 @@ export default function Home() {
     setCurrentPage(1);
   }, [filterTripDate, selectedCategories]);
 
+  // 切換幣別時，從Rates最新對照表中帶入匯率
   const handleCurrencyChange = (selectedCurrency) => {
     const defaultRate = defaultRates[selectedCurrency] || '1.0';
     setForm(prev => ({
@@ -161,13 +169,13 @@ export default function Home() {
     }));
   };
 
-  // 計算實際個人金額（若選 Share，金額即為原價 ÷ 2）
+  // 實際應記金額：若類別選 Share，則為原價 ÷ 2
   const actualAmount = useMemo(() => {
     const rawAmt = parseFloat(form.amount) || 0;
     return form.category === 'Share' ? rawAmt / 2 : rawAmt;
   }, [form.amount, form.category]);
 
-  // 計算折合 HKD 金額
+  // 折合 HKD 金額
   const calculatedHKD = useMemo(() => {
     const rate = parseFloat(form.exchangeRate) || 1;
     return (actualAmount * rate).toFixed(2);
@@ -180,14 +188,14 @@ export default function Home() {
     const finalTripDate = isCustomTripDate ? customTripDate : form.tripDate;
     setIsSubmitting(true);
 
-    // 若類別為 Share，金額欄位寫入 "=原價/2" 的 Excel 公式
-    const rawAmt = parseFloat(form.amount) || 0;
-    const amountToSend = form.category === 'Share' ? `=${rawAmt}/2` : rawAmt;
+    // 關鍵修正：直接將計算後的數字 (如果是 Share 則傳傳除以 2 後的純數字) 傳給 GAS，避免傳入 "=" 導致變為 0
+    const finalAmountVal = actualAmount;
 
     const newExpense = {
       id: Date.now(),
       ...form,
-      amount: amountToSend,
+      amount: finalAmountVal,
+      amountHKD: parseFloat(calculatedHKD),
       tripDate: finalTripDate
     };
 
@@ -244,15 +252,11 @@ export default function Home() {
   };
 
   const handleCopyExpenseToForm = (item) => {
-    // 從字串或公式中解析出原始輸入數值
     let rawAmountVal = '';
-    if (item.amount) {
-      const strAmt = String(item.amount);
-      if (strAmt.startsWith('=')) {
-        rawAmountVal = strAmt.replace('=', '').split('/')[0];
-      } else {
-        rawAmountVal = strAmt;
-      }
+    if (item.amount !== undefined && item.amount !== null) {
+      const numAmt = parseFloat(item.amount) || 0;
+      // 如果原本是 Share，複製時還原原始填寫原價 (numAmt * 2)
+      rawAmountVal = item.category === 'Share' ? String(numAmt * 2) : String(numAmt);
     }
 
     setForm(prev => ({
@@ -292,26 +296,15 @@ export default function Home() {
     return filteredByTripExpenses.filter(e => selectedCategories.includes(e.category));
   }, [filteredByTripExpenses, selectedCategories]);
 
-  // 解析單筆資料的實際數值與原價數值
+  // 解析明細項目的實際數值與原價數值
   const parseExpenseAmount = (e) => {
-    let amtNum = 0;
-    let origNum = 0;
-    const strAmt = String(e.amount || '');
-
-    if (strAmt.startsWith('=')) {
-      // 處理 "=200/2" 公式
-      const expr = strAmt.replace('=', '');
-      const parts = expr.split('/');
-      origNum = parseFloat(parts[0]) || 0;
-      amtNum = parts[1] ? origNum / parseFloat(parts[1]) : origNum;
-    } else {
-      amtNum = parseFloat(strAmt) || 0;
-      origNum = e.category === 'Share' ? amtNum * 2 : amtNum;
-    }
+    const amtNum = parseFloat(e.amount) || 0;
+    // 如果是 Share，原價為目前金額的 2 倍
+    const origNum = e.category === 'Share' ? amtNum * 2 : amtNum;
 
     const rate = parseFloat(e.exchangeRate) || 1;
-    const hkdVal = (e.amountHKD !== undefined && !isNaN(parseFloat(e.amountHKD))) 
-      ? parseFloat(e.amountHKD) 
+    const hkdVal = (e.amountHKD !== undefined && !isNaN(parseFloat(e.amountHKD)) && parseFloat(e.amountHKD) > 0)
+      ? parseFloat(e.amountHKD)
       : (amtNum * rate);
 
     return { amtNum, origNum, hkdVal };
@@ -325,7 +318,7 @@ export default function Home() {
     return personalExpenses.reduce((sum, e) => sum + parseExpenseAmount(e).hkdVal, 0);
   }, [personalExpenses]);
 
-  // 目前篩選明細的總計金額 (動態計算)
+  // 目前篩選明細的總計金額
   const currentFilteredTotal = useMemo(() => {
     return finalFilteredExpenses.reduce((sum, e) => sum + parseExpenseAmount(e).hkdVal, 0);
   }, [finalFilteredExpenses]);
@@ -460,7 +453,7 @@ export default function Home() {
                 折合 HKD ${calculatedHKD}
                 {form.category === 'Share' && (
                   <span style={{ display: 'block', fontSize: '10px', color: '#a0522d', marginTop: '2px' }}>
-                    (寫入公式: ={parseFloat(form.amount || 0)}/2)
+                    (寫入金額: {form.currency} ${actualAmount.toFixed(2)})
                   </span>
                 )}
               </div>
