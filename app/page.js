@@ -44,9 +44,18 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [defaultRates, setDefaultRates] = useState({
-    HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
-    TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
+  // 1. 預設匯率：優先讀取本地快取，確保離線或弱網時「預設值」瞬間載入
+  const [defaultRates, setDefaultRates] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cachedRates = localStorage.getItem('cached_rates');
+      if (cachedRates) {
+        try { return JSON.parse(cachedRates); } catch (e) {}
+      }
+    }
+    return {
+      HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
+      TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
+    };
   });
 
   const [filterTripDate, setFilterTripDate] = useState('ALL');
@@ -54,7 +63,6 @@ export default function Home() {
   const [customTripDate, setCustomTripDate] = useState('');
 
   const [selectedCategories, setSelectedCategories] = useState([]);
-
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
@@ -71,11 +79,17 @@ export default function Home() {
     tripDate: ''
   });
 
+  // 抓取雲端資料與匯率（背景靜默更新）
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
     try {
-      const res = await fetch(GOOGLE_SCRIPT_URL);
+      // 設置 8 秒逾時機制，避免弱網狀態下無止境等待
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(GOOGLE_SCRIPT_URL, { signal: controller.signal });
+      clearTimeout(timeoutId);
       const data = await res.json();
       
       let fetchedExpenses = [];
@@ -92,15 +106,13 @@ export default function Home() {
 
       setExpenses(fetchedExpenses);
 
+      // 若成功抓取最新匯率，更新並存入本地快取
       if (fetchedRates) {
         setDefaultRates(fetchedRates);
-        setForm(prev => ({
-          ...prev,
-          exchangeRate: fetchedRates[prev.currency] || prev.exchangeRate
-        }));
+        localStorage.setItem('cached_rates', JSON.stringify(fetchedRates));
       }
     } catch (err) {
-      console.error('Failed to fetch data:', err);
+      console.warn('網路連線較慢，已使用本地快取資料:', err);
     } finally {
       setIsLoading(false);
     }
@@ -110,21 +122,22 @@ export default function Home() {
     fetchFromGoogleSheet();
   }, []);
 
+  // 頁面初次載入時還原上次輸入習慣
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const lastCurrency = localStorage.getItem('last_currency');
-      const lastPayment = localStorage.getItem('last_paymentMethod');
-      const lastTripDate = localStorage.getItem('last_tripDate');
-      const lastDate = localStorage.getItem('last_date');
-      const lastFilterTripDate = localStorage.getItem('last_filterTripDate');
+      const lastCurrency = localStorage.getItem('last_currency') || 'HKD';
+      const lastPayment = localStorage.getItem('last_paymentMethod') || '現金';
+      const lastTripDate = localStorage.getItem('last_tripDate') || '';
+      const lastDate = localStorage.getItem('last_date') || new Date().toISOString().split('T')[0];
+      const lastFilterTripDate = localStorage.getItem('last_filterTripDate') || 'ALL';
 
       setForm(prev => ({
         ...prev,
-        currency: lastCurrency || prev.currency,
-        paymentMethod: lastPayment || prev.paymentMethod,
-        tripDate: lastTripDate || prev.tripDate,
-        date: lastDate || prev.date,
-        exchangeRate: lastCurrency ? (defaultRates[lastCurrency] || '1.0') : prev.exchangeRate
+        currency: lastCurrency,
+        paymentMethod: lastPayment,
+        tripDate: lastTripDate,
+        date: lastDate,
+        exchangeRate: defaultRates[lastCurrency] || '1.0'
       }));
 
       if (lastFilterTripDate) {
@@ -168,23 +181,26 @@ export default function Home() {
     return (actualAmount * rate).toFixed(2);
   }, [actualAmount, form.exchangeRate]);
 
+  // 樂觀更新 + 背景同步提交
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.item || !form.amount) return;
 
     const finalTripDate = isCustomTripDate ? customTripDate : form.tripDate;
-    setIsSubmitting(true);
-
-    // 關鍵修正：直接發送使用者輸入的「原始總價純數字」，不要在前端先除以 2，避免 GAS 再次除以 2
     const rawAmt = parseFloat(form.amount) || 0;
 
     const newExpense = {
       id: Date.now(),
       ...form,
       amount: rawAmt,
+      amountHKD: parseFloat(calculatedHKD),
       tripDate: finalTripDate
     };
 
+    // ⚡ 1. 樂觀更新：立刻將新資料寫入 UI 明細頂部，不必等網路回應！
+    setExpenses(prev => [newExpense, ...prev]);
+
+    // 儲存常用設定
     if (typeof window !== 'undefined') {
       localStorage.setItem('last_currency', form.currency);
       localStorage.setItem('last_paymentMethod', form.paymentMethod);
@@ -192,22 +208,7 @@ export default function Home() {
       localStorage.setItem('last_date', form.date);
     }
 
-    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
-      try {
-        await fetch(GOOGLE_SCRIPT_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newExpense),
-        });
-        setTimeout(() => {
-          fetchFromGoogleSheet();
-        }, 1000);
-      } catch (err) {
-        console.error('Failed to sync to Google Sheet:', err);
-      }
-    }
-
+    // 清空輸入欄位，讓使用者能立刻記下一筆
     setForm(prev => ({
       ...prev,
       item: '',
@@ -222,7 +223,22 @@ export default function Home() {
       setCustomTripDate('');
     }
 
-    setIsSubmitting(false);
+    // ⚡ 2. 背景靜默傳送至 Google Sheet (就算網路慢也不卡住介面)
+    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
+      setIsSubmitting(true);
+      try {
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newExpense),
+        });
+      } catch (err) {
+        console.error('背景同步失敗，資料已先於前端呈現:', err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   const formatDateForInput = (dateStr) => {
@@ -245,7 +261,6 @@ export default function Home() {
         rawAmountVal = strAmt.replace('=', '').split('/')[0];
       } else {
         const numAmt = parseFloat(strAmt) || 0;
-        // 點擊複製時，還原使用者當初輸入的原價
         rawAmountVal = item.category === 'Share' ? String(numAmt * 2) : String(numAmt);
       }
     }
@@ -508,10 +523,9 @@ export default function Home() {
 
             <button 
               type="submit" 
-              disabled={isSubmitting} 
               style={{ 
                 padding: '14px', 
-                background: isSubmitting ? '#a39281' : '#5c4033', 
+                background: '#5c4033', 
                 color: '#ffffff', 
                 border: 'none', 
                 borderRadius: '12px', 
@@ -523,7 +537,7 @@ export default function Home() {
                 transition: 'all 0.2s'
               }}
             >
-              {isSubmitting ? '儲存中...' : '記錄並同步至 Google Sheet'}
+              {isSubmitting ? '同步至雲端中...' : '記錄並同步至 Google Sheet'}
             </button>
           </div>
         </form>
@@ -645,7 +659,7 @@ export default function Home() {
 
           <p style={{ fontSize: '11px', color: '#a39281', margin: '-4px 0 12px 0' }}>💡 提示：點擊任何一筆消費明細，可快速複製資料至上方表單。</p>
 
-          {isLoading ? (
+          {isLoading && expenses.length === 0 ? (
             <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>資料同步中...</p>
           ) : finalFilteredExpenses.length === 0 ? (
             <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>該篩選條件下無消費紀錄</p>
