@@ -6,7 +6,6 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mM
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
 
-// 帶有專屬小 Icon 的類別
 const CATEGORIES_WITH_ICONS = [
   { name: '未分類', icon: '🏷️' },
   { name: 'Share', icon: '🤝' },
@@ -35,7 +34,6 @@ const CATEGORIES_WITH_ICONS = [
 
 const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '工商', '中銀', '現金', 'Alipay HK', '渣打'];
 
-// 木質大地色系配色庫 (圓餅圖用)
 const WOOD_COLORS = [
   '#8c6d58', '#a67c52', '#c4a482', '#d2b48c', '#a0522d',
   '#b8860b', '#cd853f', '#d2a679', '#966f33', '#b38b6d'
@@ -46,25 +44,20 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 動態預設匯率
   const [defaultRates, setDefaultRates] = useState({
     HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
     TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
   });
 
-  // 行程篩選與自訂旅程狀態
   const [filterTripDate, setFilterTripDate] = useState('ALL');
   const [isCustomTripDate, setIsCustomTripDate] = useState(false);
   const [customTripDate, setCustomTripDate] = useState('');
 
-  // 多選類別 Filter 狀態
   const [selectedCategories, setSelectedCategories] = useState([]);
 
-  // 分頁狀態
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  // 表單狀態
   const [form, setForm] = useState({
     item: '',
     currency: 'HKD',
@@ -78,7 +71,6 @@ export default function Home() {
     tripDate: ''
   });
 
-  // 從 Google Sheet 抓取最新資料與 Rates 分頁最新匯率
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
@@ -102,7 +94,6 @@ export default function Home() {
 
       if (fetchedRates) {
         setDefaultRates(fetchedRates);
-        // 強制更新目前選取幣別的最新匯率
         setForm(prev => ({
           ...prev,
           exchangeRate: fetchedRates[prev.currency] || prev.exchangeRate
@@ -119,7 +110,6 @@ export default function Home() {
     fetchFromGoogleSheet();
   }, []);
 
-  // 自動還原上次歷史選項
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const lastCurrency = localStorage.getItem('last_currency');
@@ -159,7 +149,6 @@ export default function Home() {
     setCurrentPage(1);
   }, [filterTripDate, selectedCategories]);
 
-  // 切換幣別時，從Rates最新對照表中帶入匯率
   const handleCurrencyChange = (selectedCurrency) => {
     const defaultRate = defaultRates[selectedCurrency] || '1.0';
     setForm(prev => ({
@@ -169,13 +158,11 @@ export default function Home() {
     }));
   };
 
-  // 實際應記金額：若類別選 Share，則為原價 ÷ 2
   const actualAmount = useMemo(() => {
     const rawAmt = parseFloat(form.amount) || 0;
     return form.category === 'Share' ? rawAmt / 2 : rawAmt;
   }, [form.amount, form.category]);
 
-  // 折合 HKD 金額
   const calculatedHKD = useMemo(() => {
     const rate = parseFloat(form.exchangeRate) || 1;
     return (actualAmount * rate).toFixed(2);
@@ -188,14 +175,13 @@ export default function Home() {
     const finalTripDate = isCustomTripDate ? customTripDate : form.tripDate;
     setIsSubmitting(true);
 
-    // 關鍵修正：直接將計算後的數字 (如果是 Share 則傳傳除以 2 後的純數字) 傳給 GAS，避免傳入 "=" 導致變為 0
-    const finalAmountVal = actualAmount;
+    // 關鍵修正：直接發送使用者輸入的「原始總價純數字」，不要在前端先除以 2，避免 GAS 再次除以 2
+    const rawAmt = parseFloat(form.amount) || 0;
 
     const newExpense = {
       id: Date.now(),
       ...form,
-      amount: finalAmountVal,
-      amountHKD: parseFloat(calculatedHKD),
+      amount: rawAmt,
       tripDate: finalTripDate
     };
 
@@ -254,9 +240,14 @@ export default function Home() {
   const handleCopyExpenseToForm = (item) => {
     let rawAmountVal = '';
     if (item.amount !== undefined && item.amount !== null) {
-      const numAmt = parseFloat(item.amount) || 0;
-      // 如果原本是 Share，複製時還原原始填寫原價 (numAmt * 2)
-      rawAmountVal = item.category === 'Share' ? String(numAmt * 2) : String(numAmt);
+      const strAmt = String(item.amount);
+      if (strAmt.startsWith('=')) {
+        rawAmountVal = strAmt.replace('=', '').split('/')[0];
+      } else {
+        const numAmt = parseFloat(strAmt) || 0;
+        // 點擊複製時，還原使用者當初輸入的原價
+        rawAmountVal = item.category === 'Share' ? String(numAmt * 2) : String(numAmt);
+      }
     }
 
     setForm(prev => ({
@@ -296,11 +287,20 @@ export default function Home() {
     return filteredByTripExpenses.filter(e => selectedCategories.includes(e.category));
   }, [filteredByTripExpenses, selectedCategories]);
 
-  // 解析明細項目的實際數值與原價數值
   const parseExpenseAmount = (e) => {
-    const amtNum = parseFloat(e.amount) || 0;
-    // 如果是 Share，原價為目前金額的 2 倍
-    const origNum = e.category === 'Share' ? amtNum * 2 : amtNum;
+    let amtNum = 0;
+    let origNum = 0;
+    const strAmt = String(e.amount || '');
+
+    if (strAmt.startsWith('=')) {
+      const expr = strAmt.replace('=', '');
+      const parts = expr.split('/');
+      origNum = parseFloat(parts[0]) || 0;
+      amtNum = parts[1] ? origNum / parseFloat(parts[1]) : origNum;
+    } else {
+      amtNum = parseFloat(strAmt) || 0;
+      origNum = e.category === 'Share' ? amtNum * 2 : amtNum;
+    }
 
     const rate = parseFloat(e.exchangeRate) || 1;
     const hkdVal = (e.amountHKD !== undefined && !isNaN(parseFloat(e.amountHKD)) && parseFloat(e.amountHKD) > 0)
@@ -318,7 +318,6 @@ export default function Home() {
     return personalExpenses.reduce((sum, e) => sum + parseExpenseAmount(e).hkdVal, 0);
   }, [personalExpenses]);
 
-  // 目前篩選明細的總計金額
   const currentFilteredTotal = useMemo(() => {
     return finalFilteredExpenses.reduce((sum, e) => sum + parseExpenseAmount(e).hkdVal, 0);
   }, [finalFilteredExpenses]);
@@ -453,7 +452,7 @@ export default function Home() {
                 折合 HKD ${calculatedHKD}
                 {form.category === 'Share' && (
                   <span style={{ display: 'block', fontSize: '10px', color: '#a0522d', marginTop: '2px' }}>
-                    (寫入金額: {form.currency} ${actualAmount.toFixed(2)})
+                    (寫入公式: ={parseFloat(form.amount || 0)}/2)
                   </span>
                 )}
               </div>
