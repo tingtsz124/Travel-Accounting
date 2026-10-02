@@ -6,7 +6,8 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mM
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
 
-const CATEGORIES_WITH_ICONS = [
+// 內建類別清單
+const DEFAULT_CATEGORIES = [
   { name: '未分類', icon: '🏷️' },
   { name: 'Share', icon: '🤝' },
   { name: 'wiki', icon: '🛍️' },
@@ -20,7 +21,7 @@ const CATEGORIES_WITH_ICONS = [
   { name: '交通', icon: '🚖' },
   { name: '娛樂', icon: '🎡' },
   { name: '公仔/扭蛋', icon: '🧸' },
-  { name: '團費', icon: '🎟️' },
+  { name: '團費', icon: '🎟️️' },
   { name: '代購', icon: '📦' },
   { name: '雜項', icon: '📎' },
   { name: 'ZB1', icon: '💎' },
@@ -44,7 +45,12 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 1. 預設匯率：優先讀取本地快取，確保離線或弱網時「預設值」瞬間載入
+  // 自訂類別狀態
+  const [customCategories, setCustomCategories] = useState([]);
+  const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  // 預設匯率快取
   const [defaultRates, setDefaultRates] = useState(() => {
     if (typeof window !== 'undefined') {
       const cachedRates = localStorage.getItem('cached_rates');
@@ -66,25 +72,51 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
+  // 今天日期預設格式 (YYYY-MM-DD)
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
   const [form, setForm] = useState({
     item: '',
     currency: 'HKD',
     amount: '',
     exchangeRate: '1.0',
     category: '未分類',
-    date: new Date().toISOString().split('T')[0],
+    date: todayStr,
     paymentMethod: '現金',
     note: '',
     destination: '',
     tripDate: ''
   });
 
-  // 抓取雲端資料與匯率（背景靜默更新）
+  // 載入自訂類別 (從 localStorage)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedCustom = localStorage.getItem('user_custom_categories');
+      if (savedCustom) {
+        try { setCustomCategories(JSON.parse(savedCustom)); } catch (e) {}
+      }
+    }
+  }, []);
+
+  // 合併內建與自訂類別清單
+  const allCategories = useMemo(() => {
+    const customList = customCategories.map(name => {
+      // 自動比對常用關鍵字 Icon，沒有匹配則使用預設標籤 🏷️
+      let icon = '🏷️';
+      if (name.includes('飛機') || name.includes('機票')) icon = '✈️';
+      else if (name.includes('車') || name.includes('交通')) icon = '🚖';
+      else if (name.includes('食') || name.includes('餐') || name.includes('啡')) icon = '🍽️';
+      else if (name.includes('買') || name.includes('購')) icon = '🛍️';
+      return { name, icon };
+    });
+    return [...DEFAULT_CATEGORIES, ...customList];
+  }, [customCategories]);
+
+  // 抓取雲端資料
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
     try {
-      // 設置 8 秒逾時機制，避免弱網狀態下無止境等待
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -106,13 +138,12 @@ export default function Home() {
 
       setExpenses(fetchedExpenses);
 
-      // 若成功抓取最新匯率，更新並存入本地快取
       if (fetchedRates) {
         setDefaultRates(fetchedRates);
         localStorage.setItem('cached_rates', JSON.stringify(fetchedRates));
       }
     } catch (err) {
-      console.warn('網路連線較慢，已使用本地快取資料:', err);
+      console.warn('弱網模式，使用快取數據:', err);
     } finally {
       setIsLoading(false);
     }
@@ -122,13 +153,12 @@ export default function Home() {
     fetchFromGoogleSheet();
   }, []);
 
-  // 頁面初次載入時還原上次輸入習慣
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const lastCurrency = localStorage.getItem('last_currency') || 'HKD';
       const lastPayment = localStorage.getItem('last_paymentMethod') || '現金';
       const lastTripDate = localStorage.getItem('last_tripDate') || '';
-      const lastDate = localStorage.getItem('last_date') || new Date().toISOString().split('T')[0];
+      const lastDate = localStorage.getItem('last_date') || todayStr;
       const lastFilterTripDate = localStorage.getItem('last_filterTripDate') || 'ALL';
 
       setForm(prev => ({
@@ -144,7 +174,7 @@ export default function Home() {
         setFilterTripDate(lastFilterTripDate);
       }
     }
-  }, [defaultRates]);
+  }, [defaultRates, todayStr]);
 
   const handleFilterTripDateChange = (selectedDate) => {
     setFilterTripDate(selectedDate);
@@ -171,6 +201,24 @@ export default function Home() {
     }));
   };
 
+  // 處理新增自訂類別
+  const handleAddNewCategory = () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    
+    if (!customCategories.includes(trimmed) && !DEFAULT_CATEGORIES.some(c => c.name === trimmed)) {
+      const updated = [...customCategories, trimmed];
+      setCustomCategories(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('user_custom_categories', JSON.stringify(updated));
+      }
+    }
+    
+    setForm(prev => ({ ...prev, category: trimmed }));
+    setIsAddingNewCategory(false);
+    setNewCategoryName('');
+  };
+
   const actualAmount = useMemo(() => {
     const rawAmt = parseFloat(form.amount) || 0;
     return form.category === 'Share' ? rawAmt / 2 : rawAmt;
@@ -181,26 +229,41 @@ export default function Home() {
     return (actualAmount * rate).toFixed(2);
   }, [actualAmount, form.exchangeRate]);
 
-  // 樂觀更新 + 背景同步提交
+  // 格式化日期為 YYYY/MM/DD 以便寫入 Excel
+  const formatSheetDate = (dateVal) => {
+    if (!dateVal) return '';
+    const parts = dateVal.replace(/-/g, '/').split('/');
+    if (parts.length === 3) {
+      const y = parts[0];
+      const m = parts[1].padStart(2, '0');
+      const d = parts[2].padStart(2, '0');
+      return `${y}/${m}/${d}`;
+    }
+    return dateVal;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.item || !form.amount) return;
 
     const finalTripDate = isCustomTripDate ? customTripDate : form.tripDate;
     const rawAmt = parseFloat(form.amount) || 0;
+    
+    // 轉為符合要求的 YYYY/MM/DD 日期格式
+    const sheetFormattedDate = formatSheetDate(form.date);
 
     const newExpense = {
       id: Date.now(),
       ...form,
       amount: rawAmt,
       amountHKD: parseFloat(calculatedHKD),
+      date: sheetFormattedDate,
       tripDate: finalTripDate
     };
 
-    // ⚡ 1. 樂觀更新：立刻將新資料寫入 UI 明細頂部，不必等網路回應！
+    // 樂觀更新前端畫面
     setExpenses(prev => [newExpense, ...prev]);
 
-    // 儲存常用設定
     if (typeof window !== 'undefined') {
       localStorage.setItem('last_currency', form.currency);
       localStorage.setItem('last_paymentMethod', form.paymentMethod);
@@ -208,7 +271,6 @@ export default function Home() {
       localStorage.setItem('last_date', form.date);
     }
 
-    // 清空輸入欄位，讓使用者能立刻記下一筆
     setForm(prev => ({
       ...prev,
       item: '',
@@ -223,7 +285,7 @@ export default function Home() {
       setCustomTripDate('');
     }
 
-    // ⚡ 2. 背景靜默傳送至 Google Sheet (就算網路慢也不卡住介面)
+    // 背景同步至 Google Sheet
     if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
       setIsSubmitting(true);
       try {
@@ -234,7 +296,7 @@ export default function Home() {
           body: JSON.stringify(newExpense),
         });
       } catch (err) {
-        console.error('背景同步失敗，資料已先於前端呈現:', err);
+        console.error('背景同步失敗:', err);
       } finally {
         setIsSubmitting(false);
       }
@@ -242,8 +304,8 @@ export default function Home() {
   };
 
   const formatDateForInput = (dateStr) => {
-    if (!dateStr) return new Date().toISOString().split('T')[0];
-    const parts = dateStr.replace(/-/g, '/').split('/');
+    if (!dateStr) return todayStr;
+    const parts = dateStr.replace(/\//g, '-').split('-');
     if (parts.length === 3) {
       const year = parts[0];
       const month = parts[1].padStart(2, '0');
@@ -431,7 +493,7 @@ export default function Home() {
   };
 
   const getCategoryIcon = (catName) => {
-    const found = CATEGORIES_WITH_ICONS.find(c => c.name === catName);
+    const found = allCategories.find(c => c.name === catName);
     return found ? found.icon : '🏷️';
   };
 
@@ -474,11 +536,45 @@ export default function Home() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} style={inputStyle}>
-                {CATEGORIES_WITH_ICONS.map(c => (
-                  <option key={c.name} value={c.name}>{c.icon} {c.name}</option>
-                ))}
-              </select>
+              {/* 類別選擇與新增選項 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <select 
+                  value={isAddingNewCategory ? 'ADD_NEW' : form.category} 
+                  onChange={e => {
+                    if (e.target.value === 'ADD_NEW') {
+                      setIsAddingNewCategory(true);
+                    } else {
+                      setIsAddingNewCategory(false);
+                      setForm({...form, category: e.target.value});
+                    }
+                  }} 
+                  style={inputStyle}
+                >
+                  {allCategories.map(c => (
+                    <option key={c.name} value={c.name}>{c.icon} {c.name}</option>
+                  ))}
+                  <option value="ADD_NEW">➕ + 新增自訂類別...</option>
+                </select>
+
+                {isAddingNewCategory && (
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input 
+                      placeholder="新類別名稱" 
+                      value={newCategoryName} 
+                      onChange={e => setNewCategoryName(e.target.value)} 
+                      style={{ ...inputStyle, padding: '8px' }} 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={handleAddNewCategory} 
+                      style={{ background: '#5c4033', color: '#fff', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '12px', whitespace: 'nowrap' }}
+                    >
+                      確定
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <select value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={inputStyle}>
                 {PAYMENT_METHODS.map(p => <option key={p} value={p}>💳 {p}</option>)}
               </select>
@@ -632,7 +728,7 @@ export default function Home() {
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {CATEGORIES_WITH_ICONS.map(cat => {
+              {allCategories.map(cat => {
                 const isSelected = selectedCategories.includes(cat.name);
                 return (
                   <button
