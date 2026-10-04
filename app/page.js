@@ -6,7 +6,6 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mM
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
 
-// 內建類別清單
 const DEFAULT_CATEGORIES = [
   { name: '未分類', icon: '🏷️' },
   { name: 'Share', icon: '🤝' },
@@ -21,7 +20,7 @@ const DEFAULT_CATEGORIES = [
   { name: '交通', icon: '🚖' },
   { name: '娛樂', icon: '🎡' },
   { name: '公仔/扭蛋', icon: '🧸' },
-  { name: '團費', icon: '🎟️️' },
+  { name: '團費', icon: '🎟️' },
   { name: '代購', icon: '📦' },
   { name: '雜項', icon: '📎' },
   { name: 'ZB1', icon: '💎' },
@@ -29,7 +28,7 @@ const DEFAULT_CATEGORIES = [
   { name: '門票', icon: '🎫' },
   { name: '日用品', icon: '🧴' },
   { name: '化妝品/飾物', icon: '💄' },
-  { name: '文具', icon: '✏️' },
+  { name: '文具', icon: '✏️️' },
   { name: '禮物', icon: '🎀' }
 ];
 
@@ -45,23 +44,16 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 自訂類別狀態
+  const [editingId, setEditingId] = useState(null);
+
   const [customCategories, setCustomCategories] = useState([]);
   const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [showCategoryManageModal, setShowCategoryManageModal] = useState(false);
 
-  // 預設匯率快取
-  const [defaultRates, setDefaultRates] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const cachedRates = localStorage.getItem('cached_rates');
-      if (cachedRates) {
-        try { return JSON.parse(cachedRates); } catch (e) {}
-      }
-    }
-    return {
-      HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
-      TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
-    };
+  const [defaultRates, setDefaultRates] = useState({
+    HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
+    TWD: '0.24', RMB: '1.09', MYR: '1.75', SGD: '5.85'
   });
 
   const [filterTripDate, setFilterTripDate] = useState('ALL');
@@ -72,7 +64,6 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  // 今天日期預設格式 (YYYY-MM-DD)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const [form, setForm] = useState({
@@ -88,62 +79,33 @@ export default function Home() {
     tripDate: ''
   });
 
-  // 載入自訂類別 (從 localStorage)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedCustom = localStorage.getItem('user_custom_categories');
-      if (savedCustom) {
-        try { setCustomCategories(JSON.parse(savedCustom)); } catch (e) {}
-      }
-    }
-  }, []);
-
-  // 合併內建與自訂類別清單
   const allCategories = useMemo(() => {
     const customList = customCategories.map(name => {
-      // 自動比對常用關鍵字 Icon，沒有匹配則使用預設標籤 🏷️
       let icon = '🏷️';
       if (name.includes('飛機') || name.includes('機票')) icon = '✈️';
       else if (name.includes('車') || name.includes('交通')) icon = '🚖';
       else if (name.includes('食') || name.includes('餐') || name.includes('啡')) icon = '🍽️';
       else if (name.includes('買') || name.includes('購')) icon = '🛍️';
-      return { name, icon };
+      return { name, icon, isCustom: true };
     });
     return [...DEFAULT_CATEGORIES, ...customList];
   }, [customCategories]);
 
-  // 抓取雲端資料
+  // 抓取雲端資料 (含明細、匯率、雲端自訂類別)
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      const res = await fetch(GOOGLE_SCRIPT_URL, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      const res = await fetch(GOOGLE_SCRIPT_URL);
       const data = await res.json();
       
-      let fetchedExpenses = [];
-      let fetchedRates = null;
-
-      if (Array.isArray(data)) {
-        fetchedExpenses = data.reverse();
-      } else if (data && data.expenses) {
-        fetchedExpenses = data.expenses.reverse();
-        if (data.defaultRates) {
-          fetchedRates = data.defaultRates;
-        }
-      }
-
-      setExpenses(fetchedExpenses);
-
-      if (fetchedRates) {
-        setDefaultRates(fetchedRates);
-        localStorage.setItem('cached_rates', JSON.stringify(fetchedRates));
+      if (data && data.expenses) {
+        setExpenses(data.expenses.reverse());
+        if (data.defaultRates) setDefaultRates(data.defaultRates);
+        if (data.customCategories) setCustomCategories(data.customCategories);
       }
     } catch (err) {
-      console.warn('弱網模式，使用快取數據:', err);
+      console.warn('同步雲端資料失敗:', err);
     } finally {
       setIsLoading(false);
     }
@@ -201,22 +163,47 @@ export default function Home() {
     }));
   };
 
-  // 處理新增自訂類別
-  const handleAddNewCategory = () => {
+  // 新增自訂類別並寫入 Google Sheet
+  const handleAddNewCategory = async () => {
     const trimmed = newCategoryName.trim();
     if (!trimmed) return;
     
     if (!customCategories.includes(trimmed) && !DEFAULT_CATEGORIES.some(c => c.name === trimmed)) {
-      const updated = [...customCategories, trimmed];
-      setCustomCategories(updated);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('user_custom_categories', JSON.stringify(updated));
+      setCustomCategories(prev => [...prev, trimmed]);
+      
+      // 同步寫入 Sheet
+      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
+        fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'save_category', categoryName: trimmed }),
+        }).catch(err => console.error(err));
       }
     }
     
     setForm(prev => ({ ...prev, category: trimmed }));
     setIsAddingNewCategory(false);
     setNewCategoryName('');
+  };
+
+  // 刪除自訂類別並同步至 Sheet
+  const handleDeleteCustomCategory = (targetName) => {
+    if (!confirm(`確定要刪除「${targetName}」類別嗎？`)) return;
+    setCustomCategories(prev => prev.filter(c => c !== targetName));
+
+    if (form.category === targetName) {
+      setForm(prev => ({ ...prev, category: '未分類' }));
+    }
+
+    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
+      fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_category', categoryName: targetName }),
+      }).catch(err => console.error(err));
+    }
   };
 
   const actualAmount = useMemo(() => {
@@ -229,7 +216,6 @@ export default function Home() {
     return (actualAmount * rate).toFixed(2);
   }, [actualAmount, form.exchangeRate]);
 
-  // 格式化日期為 YYYY/MM/DD 以便寫入 Excel
   const formatSheetDate = (dateVal) => {
     if (!dateVal) return '';
     const parts = dateVal.replace(/-/g, '/').split('/');
@@ -248,12 +234,12 @@ export default function Home() {
 
     const finalTripDate = isCustomTripDate ? customTripDate : form.tripDate;
     const rawAmt = parseFloat(form.amount) || 0;
-    
-    // 轉為符合要求的 YYYY/MM/DD 日期格式
     const sheetFormattedDate = formatSheetDate(form.date);
 
-    const newExpense = {
-      id: Date.now(),
+    const targetId = editingId || Date.now();
+
+    const updatedExpenseItem = {
+      id: targetId,
       ...form,
       amount: rawAmt,
       amountHKD: parseFloat(calculatedHKD),
@@ -261,8 +247,11 @@ export default function Home() {
       tripDate: finalTripDate
     };
 
-    // 樂觀更新前端畫面
-    setExpenses(prev => [newExpense, ...prev]);
+    if (editingId) {
+      setExpenses(prev => prev.map(e => e.id === editingId ? updatedExpenseItem : e));
+    } else {
+      setExpenses(prev => [updatedExpenseItem, ...prev]);
+    }
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('last_currency', form.currency);
@@ -279,13 +268,13 @@ export default function Home() {
       note: '',
       tripDate: finalTripDate
     }));
+    setEditingId(null);
 
     if (isCustomTripDate) {
       setIsCustomTripDate(false);
       setCustomTripDate('');
     }
 
-    // 背景同步至 Google Sheet
     if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
       setIsSubmitting(true);
       try {
@@ -293,7 +282,7 @@ export default function Home() {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newExpense),
+          body: JSON.stringify(updatedExpenseItem),
         });
       } catch (err) {
         console.error('背景同步失敗:', err);
@@ -315,7 +304,7 @@ export default function Home() {
     return dateStr;
   };
 
-  const handleCopyExpenseToForm = (item) => {
+  const handleEditExpenseItem = (item) => {
     let rawAmountVal = '';
     if (item.amount !== undefined && item.amount !== null) {
       const strAmt = String(item.amount);
@@ -327,8 +316,8 @@ export default function Home() {
       }
     }
 
-    setForm(prev => ({
-      ...prev,
+    setEditingId(item.id);
+    setForm({
       item: item.item || '',
       currency: item.currency || 'HKD',
       amount: rawAmountVal,
@@ -337,11 +326,22 @@ export default function Home() {
       paymentMethod: item.paymentMethod || '現金',
       note: item.note || '',
       destination: item.destination || '',
-      tripDate: item.tripDate || prev.tripDate,
+      tripDate: item.tripDate || form.tripDate,
       date: formatDateForInput(item.date)
-    }));
+    });
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setForm(prev => ({
+      ...prev,
+      item: '',
+      amount: '',
+      category: '未分類',
+      note: ''
+    }));
   };
 
   const toggleCategoryFilter = (categoryName) => {
@@ -509,9 +509,22 @@ export default function Home() {
           <p style={{ fontSize: '12px', color: '#8c7663', marginTop: '4px' }}>溫暖木質風格 • 輕鬆紀錄每筆花費</p>
         </div>
 
-        {/* 新增消費表單 */}
-        <form onSubmit={handleSubmit} style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: '1px solid #ece4d8' }}>
-          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>✍️ 新增消費紀錄</h3>
+        {/* 新增/編輯消費表單 */}
+        <form onSubmit={handleSubmit} style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(92, 64, 51, 0.05)', border: editingId ? '2px solid #a0522d' : '1px solid #ece4d8' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#4a3525' }}>
+              {editingId ? '✏️ 編輯消費紀錄' : '✍️ 新增消費紀錄'}
+            </h3>
+            {editingId && (
+              <button 
+                type="button" 
+                onClick={cancelEditing} 
+                style={{ background: 'none', border: 'none', color: '#a0522d', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                取消編輯
+              </button>
+            )}
+          </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <input placeholder="項目名稱 (例如: 咖啡 / 門票)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={inputStyle} />
@@ -536,7 +549,7 @@ export default function Home() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              {/* 類別選擇與新增選項 */}
+              {/* 類別選擇、新增與管理 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <select 
                   value={isAddingNewCategory ? 'ADD_NEW' : form.category} 
@@ -567,11 +580,21 @@ export default function Home() {
                     <button 
                       type="button" 
                       onClick={handleAddNewCategory} 
-                      style={{ background: '#5c4033', color: '#fff', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '12px', whitespace: 'nowrap' }}
+                      style={{ background: '#5c4033', color: '#fff', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}
                     >
                       確定
                     </button>
                   </div>
+                )}
+
+                {customCategories.length > 0 && (
+                  <button 
+                    type="button"
+                    onClick={() => setShowCategoryManageModal(true)}
+                    style={{ background: 'none', border: 'none', color: '#8c7663', fontSize: '11px', textAlign: 'left', cursor: 'pointer', textDecoration: 'underline', padding: '2px 0' }}
+                  >
+                    ⚙️ 管理雲端自訂類別 ({customCategories.length})
+                  </button>
                 )}
               </div>
 
@@ -621,7 +644,7 @@ export default function Home() {
               type="submit" 
               style={{ 
                 padding: '14px', 
-                background: '#5c4033', 
+                background: editingId ? '#a0522d' : '#5c4033', 
                 color: '#ffffff', 
                 border: 'none', 
                 borderRadius: '12px', 
@@ -633,10 +656,31 @@ export default function Home() {
                 transition: 'all 0.2s'
               }}
             >
-              {isSubmitting ? '同步至雲端中...' : '記錄並同步至 Google Sheet'}
+              {isSubmitting ? '同步至雲端中...' : editingId ? '💾 更新此筆紀錄' : '記錄並同步至 Google Sheet'}
             </button>
           </div>
         </form>
+
+        {/* 類別管理 Modal */}
+        {showCategoryManageModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, padding: '16px' }}>
+            <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '16px', maxWidth: '360px', width: '100%', border: '1px solid #e2d7c7' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h4 style={{ margin: 0, fontSize: '15px', color: '#4a3525' }}>⚙️ 管理雲端自訂類別</h4>
+                <button onClick={() => setShowCategoryManageModal(false)} style={{ background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer' }}>✕</button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
+                {customCategories.map(catName => (
+                  <div key={catName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #eee6db' }}>
+                    <span style={{ fontSize: '13px', color: '#4a3525' }}>{getCategoryIcon(catName)} {catName}</span>
+                    <button onClick={() => handleDeleteCustomCategory(catName)} style={{ background: '#f5e6e6', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '11px', color: '#a0522d', cursor: 'pointer' }}>刪除類別</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 消費概覽與統計 */}
         <div style={{ 
@@ -753,7 +797,7 @@ export default function Home() {
             </div>
           </div>
 
-          <p style={{ fontSize: '11px', color: '#a39281', margin: '-4px 0 12px 0' }}>💡 提示：點擊任何一筆消費明細，可快速複製資料至上方表單。</p>
+          <p style={{ fontSize: '11px', color: '#a39281', margin: '-4px 0 12px 0' }}>💡 提示：點擊任何一筆消費明細即可進入編輯模式修改記錄。</p>
 
           {isLoading && expenses.length === 0 ? (
             <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>資料同步中...</p>
@@ -762,20 +806,20 @@ export default function Home() {
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {paginatedExpenses.map((e, index) => {
+                {paginatedExpenses.map((e) => {
                   const { amtNum, origNum, hkdVal } = parseExpenseAmount(e);
                   const isShare = e.category === 'Share';
 
                   return (
                     <div 
-                      key={index} 
-                      onClick={() => handleCopyExpenseToForm(e)}
-                      title="點擊以複製此筆資料到新增表單"
+                      key={e.id} 
+                      onClick={() => handleEditExpenseItem(e)}
+                      title="點擊以修改此筆消費紀錄"
                       style={{ 
                         padding: '12px 14px', 
                         borderRadius: '12px', 
-                        backgroundColor: '#ffffff', 
-                        border: '1px solid #eee6db', 
+                        backgroundColor: editingId === e.id ? '#fdf3e7' : '#ffffff', 
+                        border: editingId === e.id ? '2px solid #a0522d' : '1px solid #eee6db', 
                         display: 'flex', 
                         justify: 'space-between', 
                         alignItems: 'center',
@@ -783,15 +827,13 @@ export default function Home() {
                         cursor: 'pointer',
                         transition: 'all 0.15s ease-in-out'
                       }}
-                      onMouseEnter={(evt) => evt.currentTarget.style.borderColor = '#8c6d58'}
-                      onMouseLeave={(evt) => evt.currentTarget.style.borderColor = '#eee6db'}
                     >
                       {/* 左側：項目與細節說明 */}
                       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '14px', flexShrink: 0 }}>{getCategoryIcon(e.category)}</span>
                           <strong style={{ fontSize: '14px', color: '#3d2b1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {e.item}
+                            {e.item} {editingId === e.id && '✏️ (編輯中)'}
                           </strong>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#8c7663', flexWrap: 'wrap' }}>
