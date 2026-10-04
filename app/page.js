@@ -20,7 +20,7 @@ const DEFAULT_CATEGORIES = [
   { name: '交通', icon: '🚖' },
   { name: '娛樂', icon: '🎡' },
   { name: '公仔/扭蛋', icon: '🧸' },
-  { name: '團費', icon: '🎟️' },
+  { name: '團費', icon: '🎟️️' },
   { name: '代購', icon: '📦' },
   { name: '雜項', icon: '📎' },
   { name: 'ZB1', icon: '💎' },
@@ -28,7 +28,7 @@ const DEFAULT_CATEGORIES = [
   { name: '門票', icon: '🎫' },
   { name: '日用品', icon: '🧴' },
   { name: '化妝品/飾物', icon: '💄' },
-  { name: '文具', icon: '✏️️' },
+  { name: '文具', icon: '✏️' },
   { name: '禮物', icon: '🎀' }
 ];
 
@@ -91,7 +91,6 @@ export default function Home() {
     return [...DEFAULT_CATEGORIES, ...customList];
   }, [customCategories]);
 
-  // 抓取雲端資料 (含明細、匯率、雲端自訂類別)
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
     setIsLoading(true);
@@ -163,7 +162,6 @@ export default function Home() {
     }));
   };
 
-  // 新增自訂類別並寫入 Google Sheet
   const handleAddNewCategory = async () => {
     const trimmed = newCategoryName.trim();
     if (!trimmed) return;
@@ -171,7 +169,6 @@ export default function Home() {
     if (!customCategories.includes(trimmed) && !DEFAULT_CATEGORIES.some(c => c.name === trimmed)) {
       setCustomCategories(prev => [...prev, trimmed]);
       
-      // 同步寫入 Sheet
       if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
         fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
@@ -187,7 +184,6 @@ export default function Home() {
     setNewCategoryName('');
   };
 
-  // 刪除自訂類別並同步至 Sheet
   const handleDeleteCustomCategory = (targetName) => {
     if (!confirm(`確定要刪除「${targetName}」類別嗎？`)) return;
     setCustomCategories(prev => prev.filter(c => c !== targetName));
@@ -304,7 +300,40 @@ export default function Home() {
     return dateStr;
   };
 
-  const handleEditExpenseItem = (item) => {
+  // 1. 複製功能 (當作新紀錄填入表單)
+  const handleCopyExpenseToForm = (item, e) => {
+    if (e) e.stopPropagation();
+    let rawAmountVal = '';
+    if (item.amount !== undefined && item.amount !== null) {
+      const strAmt = String(item.amount);
+      if (strAmt.startsWith('=')) {
+        rawAmountVal = strAmt.replace('=', '').split('/')[0];
+      } else {
+        const numAmt = parseFloat(strAmt) || 0;
+        rawAmountVal = item.category === 'Share' ? String(numAmt * 2) : String(numAmt);
+      }
+    }
+
+    setEditingId(null); // 確保退出編輯模式，視為新新增
+    setForm({
+      item: item.item || '',
+      currency: item.currency || 'HKD',
+      amount: rawAmountVal,
+      exchangeRate: item.exchangeRate ? String(item.exchangeRate) : (defaultRates[item.currency] || '1.0'),
+      category: item.category || '未分類',
+      paymentMethod: item.paymentMethod || '現金',
+      note: item.note || '',
+      destination: item.destination || '',
+      tripDate: item.tripDate || form.tripDate,
+      date: formatDateForInput(item.date)
+    });
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 2. 編輯功能 (精準覆蓋舊記錄)
+  const handleEditExpenseItem = (item, e) => {
+    if (e) e.stopPropagation();
     let rawAmountVal = '';
     if (item.amount !== undefined && item.amount !== null) {
       const strAmt = String(item.amount);
@@ -521,7 +550,7 @@ export default function Home() {
                 onClick={cancelEditing} 
                 style={{ background: 'none', border: 'none', color: '#a0522d', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
               >
-                取消編輯
+                取消編輯 (轉為新增)
               </button>
             )}
           </div>
@@ -549,7 +578,6 @@ export default function Home() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              {/* 類別選擇、新增與管理 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <select 
                   value={isAddingNewCategory ? 'ADD_NEW' : form.category} 
@@ -603,7 +631,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* 旅程日期選單 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <select 
                 value={isCustomTripDate ? 'NEW' : form.tripDate} 
@@ -656,7 +683,7 @@ export default function Home() {
                 transition: 'all 0.2s'
               }}
             >
-              {isSubmitting ? '同步至雲端中...' : editingId ? '💾 更新此筆紀錄' : '記錄並同步至 Google Sheet'}
+              {isSubmitting ? '同步至雲端中...' : editingId ? '💾 覆蓋並更新此筆紀錄' : '記錄並同步至 Google Sheet'}
             </button>
           </div>
         </form>
@@ -721,7 +748,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 獨立小計 */}
           <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e8dec8' }}>
             <div style={{ fontSize: '12px', color: '#8c7663', fontWeight: '600', marginBottom: '6px' }}>
               🛍️ 獨立小計
@@ -732,7 +758,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 圓形圖 */}
           <div style={{ borderTop: '1px solid #e0d5c1', marginTop: '16px', paddingTop: '12px' }}>
             <div style={{ fontSize: '12px', textAlign: 'center', color: '#8c7663' }}>🏷️ 個人類別消費佔比</div>
             {renderPieChart()}
@@ -797,7 +822,7 @@ export default function Home() {
             </div>
           </div>
 
-          <p style={{ fontSize: '11px', color: '#a39281', margin: '-4px 0 12px 0' }}>💡 提示：點擊任何一筆消費明細即可進入編輯模式修改記錄。</p>
+          <p style={{ fontSize: '11px', color: '#a39281', margin: '-4px 0 12px 0' }}>💡 提示：點擊卡片快速「複製」發票，點右側 ✏️ 圖示進入「編輯覆蓋」。</p>
 
           {isLoading && expenses.length === 0 ? (
             <p style={{ color: '#a39281', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>資料同步中...</p>
@@ -813,8 +838,8 @@ export default function Home() {
                   return (
                     <div 
                       key={e.id} 
-                      onClick={() => handleEditExpenseItem(e)}
-                      title="點擊以修改此筆消費紀錄"
+                      onClick={(evt) => handleCopyExpenseToForm(e, evt)}
+                      title="點擊以複製此筆資料到新增表單"
                       style={{ 
                         padding: '12px 14px', 
                         borderRadius: '12px', 
@@ -845,18 +870,39 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* 右側：金額資訊 */}
-                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
-                          HKD ${hkdVal.toFixed(2)}
+                      {/* 右側：金額與獨立按鈕區 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
+                            HKD ${hkdVal.toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#a39281' }}>
+                            {isShare ? (
+                              `${e.currency} $${amtNum.toFixed(2)} (原價 ${e.currency} $${origNum.toFixed(2)})`
+                            ) : (
+                              `${e.currency} $${amtNum.toFixed(2)}`
+                            )}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '11px', color: '#a39281' }}>
-                          {isShare ? (
-                            `${e.currency} $${amtNum.toFixed(2)} (原價 ${e.currency} $${origNum.toFixed(2)})`
-                          ) : (
-                            `${e.currency} $${amtNum.toFixed(2)}`
-                          )}
-                        </div>
+
+                        {/* ✏️ 獨立編輯按鈕 */}
+                        <button
+                          type="button"
+                          onClick={(evt) => handleEditExpenseItem(e, evt)}
+                          title="修改覆蓋此筆紀錄"
+                          style={{
+                            padding: '6px 8px',
+                            borderRadius: '8px',
+                            border: '1px solid #d2b48c',
+                            backgroundColor: '#f5efe6',
+                            color: '#5c4033',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            flexShrink: 0
+                          }}
+                        >
+                          ✏️
+                        </button>
                       </div>
                     </div>
                   );
