@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 
-// ⚠️ 請確保下方網址為你正確的 Google Apps Script 部署網址
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPylNFwH94mMWD0PEhxVzCVQkIffukv28r5GcxosiBvDdcQrZRlVSnWsv-yFrUvnaHvQ/exec';
 
 const CURRENCIES = ['HKD', 'MOP', 'KRW', 'JPY', 'TWD', 'RMB', 'MYR', 'SGD'];
@@ -20,7 +19,7 @@ const DEFAULT_CATEGORIES = [
   { name: '交通', icon: '🚖' },
   { name: '娛樂', icon: '🎡' },
   { name: '公仔/扭蛋', icon: '🧸' },
-  { name: '團費', icon: '🎟️️' },
+  { name: '團費', icon: '🎟️' },
   { name: '代購', icon: '📦' },
   { name: '雜項', icon: '📎' },
   { name: 'ZB1', icon: '💎' },
@@ -32,7 +31,7 @@ const DEFAULT_CATEGORIES = [
   { name: '禮物', icon: '🎀' }
 ];
 
-const PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '工商', '中銀', '現金', 'Alipay HK', '渣打'];
+const DEFAULT_PAYMENT_METHODS = ['AE', 'MOX', '工商銀聯', '大西洋', '大豐', '工商', '中銀', '現金', 'Alipay HK', '渣打'];
 
 const WOOD_COLORS = [
   '#8c6d58', '#a67c52', '#c4a482', '#d2b48c', '#a0522d',
@@ -46,10 +45,13 @@ export default function Home() {
 
   const [editingId, setEditingId] = useState(null);
 
+  // 自訂類別與付款方式狀態
   const [customCategories, setCustomCategories] = useState([]);
+  const [customPayments, setCustomPayments] = useState([]);
   const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [showCategoryManageModal, setShowCategoryManageModal] = useState(false);
+  const [isAddingNewPayment, setIsAddingNewPayment] = useState(false);
+  const [newPaymentName, setNewPaymentName] = useState('');
 
   const [defaultRates, setDefaultRates] = useState({
     HKD: '1.0', MOP: '0.97', JPY: '0.051', KRW: '0.0058',
@@ -86,10 +88,14 @@ export default function Home() {
       else if (name.includes('車') || name.includes('交通')) icon = '🚖';
       else if (name.includes('食') || name.includes('餐') || name.includes('啡')) icon = '🍽️';
       else if (name.includes('買') || name.includes('購')) icon = '🛍️';
-      return { name, icon, isCustom: true };
+      return { name, icon };
     });
     return [...DEFAULT_CATEGORIES, ...customList];
   }, [customCategories]);
+
+  const allPaymentMethods = useMemo(() => {
+    return [...DEFAULT_PAYMENT_METHODS, ...customPayments];
+  }, [customPayments]);
 
   const fetchFromGoogleSheet = async () => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === 'YOUR_GOOGLE_SCRIPT_URL') return;
@@ -102,6 +108,7 @@ export default function Home() {
         setExpenses(data.expenses.reverse());
         if (data.defaultRates) setDefaultRates(data.defaultRates);
         if (data.customCategories) setCustomCategories(data.customCategories);
+        if (data.customPayments) setCustomPayments(data.customPayments);
       }
     } catch (err) {
       console.warn('同步雲端資料失敗:', err);
@@ -162,43 +169,59 @@ export default function Home() {
     }));
   };
 
+  // 新增類別
   const handleAddNewCategory = async () => {
     const trimmed = newCategoryName.trim();
     if (!trimmed) return;
-    
     if (!customCategories.includes(trimmed) && !DEFAULT_CATEGORIES.some(c => c.name === trimmed)) {
       setCustomCategories(prev => [...prev, trimmed]);
-      
       if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
         fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'save_category', categoryName: trimmed }),
+          body: JSON.stringify({ action: 'save_metadata', metaType: 'category', metaName: trimmed }),
         }).catch(err => console.error(err));
       }
     }
-    
     setForm(prev => ({ ...prev, category: trimmed }));
     setIsAddingNewCategory(false);
     setNewCategoryName('');
   };
 
-  const handleDeleteCustomCategory = (targetName) => {
-    if (!confirm(`確定要刪除「${targetName}」類別嗎？`)) return;
-    setCustomCategories(prev => prev.filter(c => c !== targetName));
-
-    if (form.category === targetName) {
-      setForm(prev => ({ ...prev, category: '未分類' }));
+  // 新增付款方式
+  const handleAddNewPayment = async () => {
+    const trimmed = newPaymentName.trim();
+    if (!trimmed) return;
+    if (!customPayments.includes(trimmed) && !DEFAULT_PAYMENT_METHODS.includes(trimmed)) {
+      setCustomPayments(prev => [...prev, trimmed]);
+      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
+        fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'save_metadata', metaType: 'payment', metaName: trimmed }),
+        }).catch(err => console.error(err));
+      }
     }
+    setForm(prev => ({ ...prev, paymentMethod: trimmed }));
+    setIsAddingNewPayment(false);
+    setNewPaymentName('');
+  };
 
-    if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'YOUR_GOOGLE_SCRIPT_URL') {
-      fetch(GOOGLE_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete_category', categoryName: targetName }),
-      }).catch(err => console.error(err));
+  // 金額計算器運算邏輯
+  const handleEvaluateAmount = () => {
+    try {
+      // 僅允許數字與基本運算符號以策安全
+      const sanitized = form.amount.replace(/[^0-9+\-*/().]/g, '');
+      if (sanitized) {
+        const result = Function('"use strict";return (' + sanitized + ')')();
+        if (!isNaN(result)) {
+          setForm(prev => ({ ...prev, amount: String(Number(result.toFixed(2))) }));
+        }
+      }
+    } catch (e) {
+      // 算式有誤則不處理
     }
   };
 
@@ -300,7 +323,6 @@ export default function Home() {
     return dateStr;
   };
 
-  // 1. 複製功能 (當作新紀錄填入表單)
   const handleCopyExpenseToForm = (item, e) => {
     if (e) e.stopPropagation();
     let rawAmountVal = '';
@@ -314,7 +336,7 @@ export default function Home() {
       }
     }
 
-    setEditingId(null); // 確保退出編輯模式，視為新新增
+    setEditingId(null);
     setForm({
       item: item.item || '',
       currency: item.currency || 'HKD',
@@ -331,7 +353,6 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 2. 編輯功能 (精準覆蓋舊記錄)
   const handleEditExpenseItem = (item, e) => {
     if (e) e.stopPropagation();
     let rawAmountVal = '';
@@ -558,11 +579,29 @@ export default function Home() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <input placeholder="項目名稱 (例如: 咖啡 / 門票)" value={form.item} onChange={e => setForm({...form, item: e.target.value})} required style={inputStyle} />
             
+            {/* 幣別與金額欄位 (含計算器 = 按鈕) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
               <select value={form.currency} onChange={e => handleCurrencyChange(e.target.value)} style={inputStyle}>
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <input type="number" step="0.01" placeholder="金額 (原價)" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required style={inputStyle} />
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <input 
+                  type="text" 
+                  placeholder="金額 (支援 100+50)" 
+                  value={form.amount} 
+                  onChange={e => setForm({...form, amount: e.target.value})} 
+                  required 
+                  style={{ ...inputStyle, flex: 1 }} 
+                />
+                <button 
+                  type="button" 
+                  onClick={handleEvaluateAmount} 
+                  title="計算結果" 
+                  style={{ background: '#e2d7c7', border: 'none', borderRadius: '10px', padding: '0 10px', fontWeight: 'bold', color: '#4a3525', cursor: 'pointer' }}
+                >
+                  =
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
@@ -577,7 +616,9 @@ export default function Home() {
               </div>
             </div>
 
+            {/* 類別與付款方式選擇 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              {/* 類別選擇 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <select 
                   value={isAddingNewCategory ? 'ADD_NEW' : form.category} 
@@ -608,27 +649,50 @@ export default function Home() {
                     <button 
                       type="button" 
                       onClick={handleAddNewCategory} 
-                      style={{ background: '#5c4033', color: '#fff', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}
+                      style={{ background: '#5c4033', color: '#fff', border: 'none', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}
                     >
                       確定
                     </button>
                   </div>
                 )}
-
-                {customCategories.length > 0 && (
-                  <button 
-                    type="button"
-                    onClick={() => setShowCategoryManageModal(true)}
-                    style={{ background: 'none', border: 'none', color: '#8c7663', fontSize: '11px', textAlign: 'left', cursor: 'pointer', textDecoration: 'underline', padding: '2px 0' }}
-                  >
-                    ⚙️ 管理雲端自訂類別 ({customCategories.length})
-                  </button>
-                )}
               </div>
 
-              <select value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})} style={inputStyle}>
-                {PAYMENT_METHODS.map(p => <option key={p} value={p}>💳 {p}</option>)}
-              </select>
+              {/* 付款方式選擇 (支援新增) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <select 
+                  value={isAddingNewPayment ? 'ADD_NEW' : form.paymentMethod} 
+                  onChange={e => {
+                    if (e.target.value === 'ADD_NEW') {
+                      setIsAddingNewPayment(true);
+                    } else {
+                      setIsAddingNewPayment(false);
+                      setForm({...form, paymentMethod: e.target.value});
+                    }
+                  }} 
+                  style={inputStyle}
+                >
+                  {allPaymentMethods.map(p => <option key={p} value={p}>💳 {p}</option>)}
+                  <option value="ADD_NEW">➕ + 新增付款方式...</option>
+                </select>
+
+                {isAddingNewPayment && (
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input 
+                      placeholder="新付款方式" 
+                      value={newPaymentName} 
+                      onChange={e => setNewPaymentName(e.target.value)} 
+                      style={{ ...inputStyle, padding: '8px' }} 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={handleAddNewPayment} 
+                      style={{ background: '#5c4033', color: '#fff', border: 'none', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}
+                    >
+                      確定
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -660,8 +724,19 @@ export default function Home() {
               )}
             </div>
 
+            {/* 日期欄位 (附帶「今天」快捷按鈕) 與目的地 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={inputStyle} />
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
+                <button 
+                  type="button" 
+                  onClick={() => setForm(prev => ({ ...prev, date: todayStr }))}
+                  title="跳至今天"
+                  style={{ background: '#e2d7c7', border: 'none', borderRadius: '8px', padding: '8px 8px', fontSize: '11px', color: '#4a3525', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  今天
+                </button>
+              </div>
               <input placeholder="目的地 (例如: 京都)" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} style={inputStyle} />
             </div>
 
@@ -687,27 +762,6 @@ export default function Home() {
             </button>
           </div>
         </form>
-
-        {/* 類別管理 Modal */}
-        {showCategoryManageModal && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, padding: '16px' }}>
-            <div style={{ backgroundColor: '#fdfbf7', padding: '20px', borderRadius: '16px', maxWidth: '360px', width: '100%', border: '1px solid #e2d7c7' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <h4 style={{ margin: 0, fontSize: '15px', color: '#4a3525' }}>⚙️ 管理雲端自訂類別</h4>
-                <button onClick={() => setShowCategoryManageModal(false)} style={{ background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer' }}>✕</button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
-                {customCategories.map(catName => (
-                  <div key={catName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #eee6db' }}>
-                    <span style={{ fontSize: '13px', color: '#4a3525' }}>{getCategoryIcon(catName)} {catName}</span>
-                    <button onClick={() => handleDeleteCustomCategory(catName)} style={{ background: '#f5e6e6', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '11px', color: '#a0522d', cursor: 'pointer' }}>刪除類別</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 消費概覽與統計 */}
         <div style={{ 
@@ -837,7 +891,7 @@ export default function Home() {
 
                   return (
                     <div 
-                      key={e.id} 
+                      key={e.id || Math.random()} 
                       onClick={(evt) => handleCopyExpenseToForm(e, evt)}
                       title="點擊以複製此筆資料到新增表單"
                       style={{ 
@@ -853,7 +907,6 @@ export default function Home() {
                         transition: 'all 0.15s ease-in-out'
                       }}
                     >
-                      {/* 左側：項目與細節說明 */}
                       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '14px', flexShrink: 0 }}>{getCategoryIcon(e.category)}</span>
@@ -870,7 +923,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* 右側：金額與獨立按鈕區 */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '15px', fontWeight: '700', color: e.category === 'wiki' || e.category === '代購' ? '#b85e32' : '#5c4033' }}>
@@ -885,7 +937,6 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* ✏️ 獨立編輯按鈕 */}
                         <button
                           type="button"
                           onClick={(evt) => handleEditExpenseItem(e, evt)}
@@ -909,7 +960,6 @@ export default function Home() {
                 })}
               </div>
 
-              {/* 分頁按鈕 */}
               {totalPages > 1 && (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '20px' }}>
                   <button 
